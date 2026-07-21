@@ -332,8 +332,6 @@ export function useChatSessionState({
       if (!hasMoreMessages || !selectedSession || !selectedProject) return false;
 
       isLoadingMoreRef.current = true;
-      const previousScrollHeight = container.scrollHeight;
-      const previousScrollTop = container.scrollTop;
 
       try {
         const slot = await sessionStore.fetchMore(selectedSession.id, {
@@ -354,7 +352,13 @@ export function useChatSessionState({
           return false;
         }
 
-        pendingScrollRestoreRef.current = { height: previousScrollHeight, top: previousScrollTop };
+        // Capture the scroll anchor NOW — after the (async) fetch, immediately
+        // before the prepend — not before the await. The fetch has network
+        // latency during which the user keeps scrolling; anchoring to the
+        // pre-fetch position left the view off by however far they moved,
+        // producing a ~90px lurch on every load. Reading it here anchors to
+        // where the user actually is.
+        pendingScrollRestoreRef.current = { height: container.scrollHeight, top: container.scrollTop };
         setHasMoreMessages(slot.hasMore);
         setTotalMessages(slot.total);
         setVisibleMessageCount((prev) => prev + MESSAGES_PER_PAGE);
