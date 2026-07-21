@@ -468,8 +468,27 @@ export function useChatSessionState({
     let stableCount = 0;
     let rafId = 0;
 
+    // Abort the forced re-scroll the instant the user tries to take over.
+    // Without this, the loop kept slamming scrollTop to the bottom for up to
+    // ~1s after opening a session, so a fast scroll-up in that window felt like
+    // the view was fighting back / refusing to leave the bottom.
+    const cleanup = () => {
+      container.removeEventListener('wheel', onWheel);
+      container.removeEventListener('touchstart', abort);
+      container.removeEventListener('keydown', abort);
+    };
+    const abort = () => {
+      pendingInitialScrollRef.current = false;
+      if (rafId) cancelAnimationFrame(rafId);
+      cleanup();
+    };
+    const onWheel = (e: WheelEvent) => { if (e.deltaY < 0) { setIsUserScrolledUp(true); abort(); } };
+    container.addEventListener('wheel', onWheel, { passive: true });
+    container.addEventListener('touchstart', abort, { passive: true });
+    container.addEventListener('keydown', abort);
+
     const tick = () => {
-      if (!pendingInitialScrollRef.current || !scrollContainerRef.current) return;
+      if (!pendingInitialScrollRef.current || !scrollContainerRef.current) { cleanup(); return; }
       container.scrollTop = container.scrollHeight;
       if (container.scrollHeight === lastHeight) {
         stableCount++;
@@ -482,11 +501,13 @@ export function useChatSessionState({
         rafId = requestAnimationFrame(tick);
       } else {
         pendingInitialScrollRef.current = false;
+        cleanup();
       }
     };
     rafId = requestAnimationFrame(tick);
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
+      cleanup();
     };
   }, [chatMessages.length, isLoadingSessionMessages, scrollToBottom]);
 
