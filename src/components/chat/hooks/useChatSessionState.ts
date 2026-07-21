@@ -411,6 +411,21 @@ export function useChatSessionState({
     }
   }, [hasMoreMessages, isNearBottom, loadOlderMessages]);
 
+  // rAF-throttled wrapper around handleScroll, shared by the scroll listener and
+  // the wheel/touch handlers. Coalesces a burst of events into one layout-read +
+  // setState per frame (the scroll-jank fix) while still catching wheel/touch
+  // intent when the pane is too short to overflow — in that case the browser
+  // emits no native `scroll` event, so without these the "load more" trigger
+  // never fires and a short session appears stuck at the top.
+  const scrollCheckRafRef = useRef(0);
+  const requestScrollCheck = useCallback(() => {
+    if (scrollCheckRafRef.current) return;
+    scrollCheckRafRef.current = requestAnimationFrame(() => {
+      scrollCheckRafRef.current = 0;
+      handleScroll();
+    });
+  }, [handleScroll]);
+
   useLayoutEffect(() => {
     if (!pendingScrollRestoreRef.current || !scrollContainerRef.current) return;
     const { height, top } = pendingScrollRestoreRef.current;
@@ -755,32 +770,22 @@ export function useChatSessionState({
     if (heightDiff > 0 && prevTop > 0) container.scrollTop = prevTop + heightDiff;
   }, [chatMessages.length, isLoadingMoreMessages, isUserScrolledUp, scrollToBottom]);
 
-  // Scroll listener: coalesce to one run per frame and register passively.
-  //
-  // `handleScroll` reads layout (scrollTop/scrollHeight/clientHeight) and calls
-  // setState, so running it for every raw scroll event thrashed layout and made
-  // scrolling choppy — especially on long, un-virtualized conversations. A rAF
-  // gate collapses a burst of scroll events into a single handler call per
-  // frame, and `{ passive: true }` lets the browser scroll without waiting on
-  // this listener. It is the sole scroll trigger now (the redundant
-  // onWheel/onTouchMove bindings that re-ran the same work were removed).
+  // Scroll listener: coalesce to one run per frame (via requestScrollCheck) and
+  // register passively so the browser scrolls without waiting on this listener.
+  // Wheel/touch are handled separately (see requestScrollCheck) to cover the
+  // case where the pane is too short to emit native scroll events.
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    let rafId = 0;
-    const onScroll = () => {
-      if (rafId) return;
-      rafId = requestAnimationFrame(() => {
-        rafId = 0;
-        handleScroll();
-      });
-    };
-    container.addEventListener('scroll', onScroll, { passive: true });
+    container.addEventListener('scroll', requestScrollCheck, { passive: true });
     return () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      container.removeEventListener('scroll', onScroll);
+      container.removeEventListener('scroll', requestScrollCheck);
+      if (scrollCheckRafRef.current) {
+        cancelAnimationFrame(scrollCheckRafRef.current);
+        scrollCheckRafRef.current = 0;
+      }
     };
-  }, [handleScroll]);
+  }, [requestScrollCheck]);
 
   // "Load all" overlay visibility is driven by scroll-to-top in handleScroll;
   // timers are cleared on session change via the reset effect above.
@@ -878,5 +883,6 @@ export function useChatSessionState({
     scrollToBottomAndReset,
     isNearBottom,
     handleScroll,
+    requestScrollCheck,
   };
 }
