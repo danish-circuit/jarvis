@@ -321,7 +321,73 @@ export class ClaudeSessionsProvider implements IProviderSessions {
       Boolean(raw.parentToolUseId) ||
       Boolean(raw.parent_tool_use_id);
 
+    // Loading a skill injects its SKILL.md as a role:"user" message carrying a
+    // `sourceToolUseID` that points back at the `Skill` tool call (and `isMeta`
+    // on the persisted transcript). History drops it via the isMeta filter and
+    // the live stream renders it as a user bubble — both wrong. Tag it as skill
+    // content linked to its tool call so the UI can fold it into a collapsible
+    // skill block. Must run before the isMeta guard below.
+    if (raw.message?.role === 'user' && raw.sourceToolUseID && raw.message?.content) {
+      const injectedContent = raw.message.content;
+      const injectedText =
+        typeof injectedContent === 'string'
+          ? injectedContent
+          : Array.isArray(injectedContent)
+            ? injectedContent
+                .filter((part: AnyRecord) => part?.type === 'text')
+                .map((part: AnyRecord) => part.text || '')
+                .join('\n')
+            : '';
+      if (injectedText.trim()) {
+        messages.push(createNormalizedMessage({
+          id: baseId,
+          sessionId,
+          timestamp: ts,
+          provider: PROVIDER,
+          kind: 'text',
+          role: 'assistant',
+          content: injectedText,
+          isSkillContent: true,
+          toolId: String(raw.sourceToolUseID),
+        }));
+      }
+      return messages;
+    }
+
     if (raw.message?.role === 'user' && raw.message?.content && raw.isMeta !== true) {
+      // Compaction writes a synthetic role:"user" continuation message that
+      // summarizes the truncated history ("This session is being continued…").
+      // The CLI flags it `isCompactSummary` when persisting, but the live SDK
+      // stream does not carry that flag — so detect it by the stable prefix as
+      // well. Either way, emit it as an assistant-authored summary (the UI
+      // collapses it) so it never renders as a user bubble on either path.
+      const rawContent = raw.message.content;
+      const compactText =
+        typeof rawContent === 'string'
+          ? rawContent
+          : Array.isArray(rawContent)
+            ? rawContent
+                .filter((part: AnyRecord) => part?.type === 'text')
+                .map((part: AnyRecord) => part.text || '')
+                .join('\n')
+            : '';
+      const isCompactContinuation =
+        (raw.isCompactSummary === true && compactText.trim().length > 0) ||
+        compactText.trimStart().startsWith('This session is being continued from a previous conversation');
+      if (isCompactContinuation) {
+        messages.push(createNormalizedMessage({
+          id: baseId,
+          sessionId,
+          timestamp: ts,
+          provider: PROVIDER,
+          kind: 'text',
+          role: 'assistant',
+          content: compactText,
+          isCompactSummary: true,
+        }));
+        return messages;
+      }
+
       if (Array.isArray(raw.message.content)) {
         // Image attachments sent through the SDK are persisted as base64
         // `image` blocks next to the prompt text. Collect them so the UI can
@@ -407,27 +473,8 @@ export class ClaudeSessionsProvider implements IProviderSessions {
       } else if (typeof raw.message.content === 'string') {
         const text = raw.message.content;
 
-        /**
-         * Claude stores compact summaries as synthetic "user" rows so the CLI
-         * can resume the next session turn with the summary in-context.
-         *
-         * For the web UI this is much more useful as assistant-authored summary
-         * text; otherwise it is both filtered by the generic internal-prefix
-         * check and visually mislabeled as a user message.
-         */
-        if (raw.isCompactSummary === true && text.trim()) {
-          messages.push(createNormalizedMessage({
-            id: baseId,
-            sessionId,
-            timestamp: ts,
-            provider: PROVIDER,
-            kind: 'text',
-            role: 'assistant',
-            content: text,
-            isCompactSummary: true,
-          }));
-          return messages;
-        }
+        // Compact-summary continuations are handled above (before this branch),
+        // for both the flagged (history) and unflagged (live stream) cases.
 
         /**
          * Local slash commands are serialized as tagged text even though they

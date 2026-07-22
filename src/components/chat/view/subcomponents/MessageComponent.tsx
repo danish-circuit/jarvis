@@ -14,6 +14,8 @@ import { ToolRenderer, shouldHideToolResult } from '../../tools';
 import { Reasoning, ReasoningTrigger, ReasoningContent } from '../../../../shared/view/ui';
 
 import ChatMessageImages from './ChatMessageImages';
+import CompactSummaryBlock from './CompactSummaryBlock';
+import SkillBlock from './SkillBlock';
 import { Markdown } from './Markdown';
 import MessageCopyControl from './MessageCopyControl';
 import MessageSpeakControl from './MessageSpeakControl';
@@ -127,6 +129,12 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, s
             <span className="text-xs text-gray-500 dark:text-gray-400">{message.content}</span>
           </div>
         </div>
+      ) : message.isCompactSummary ? (
+        /* Compaction continuation: collapsed 'Context compacted' divider */
+        <CompactSummaryBlock content={String(message.content || '')} />
+      ) : message.isSkillContent ? (
+        /* Skill load: collapsed 'Skill: <name>' block */
+        <SkillBlock name={message.skillName} content={String(message.content || '')} />
       ) : (
         /* Claude/Error/Tool messages on the left */
         <div className="w-full">

@@ -128,7 +128,60 @@ export function normalizedToChatMessages(messages: NormalizedMessage[]): ChatMes
     for (const item of produced) converted.push(item);
   }
 
-  return converted;
+  return foldSkillLoads(converted);
+}
+
+/**
+ * Extract the skill name from a `Skill` tool call's input (a JSON string on the
+ * converted message, e.g. `{"skill":"run-benchmark"}`).
+ */
+function extractSkillName(toolInput: unknown): string | undefined {
+  try {
+    const parsed = typeof toolInput === 'string' ? JSON.parse(toolInput) : toolInput;
+    const skill = (parsed as Record<string, unknown>)?.skill ?? (parsed as Record<string, unknown>)?.name;
+    return typeof skill === 'string' && skill.trim() ? skill.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Fold skill loads into a single collapsible block: the `Skill` tool call
+ * carries the skill name, the injected SKILL.md arrives as a separate
+ * `isSkillContent` message linked by `toolId`. Graft the name onto the content
+ * block and drop the raw `Skill` tool call (the block replaces it). Non-skill
+ * messages pass through untouched.
+ */
+function foldSkillLoads(messages: ChatMessage[]): ChatMessage[] {
+  let hasSkill = false;
+  const namesByToolId = new Map<string, string>();
+  for (const m of messages) {
+    if (m.isToolUse && m.toolName === 'Skill') {
+      hasSkill = true;
+      const name = m.toolId ? extractSkillName(m.toolInput) : undefined;
+      if (m.toolId && name) namesByToolId.set(m.toolId, name);
+    } else if (m.isSkillContent) {
+      hasSkill = true;
+    }
+  }
+  if (!hasSkill) return messages;
+
+  let lastSkillName: string | undefined;
+  const result: ChatMessage[] = [];
+  for (const m of messages) {
+    if (m.isToolUse && m.toolName === 'Skill') {
+      const name = m.toolId ? namesByToolId.get(m.toolId) : undefined;
+      if (name) lastSkillName = name;
+      continue; // the collapsible skill block stands in for the raw tool call
+    }
+    if (m.isSkillContent) {
+      const name = (m.toolId && namesByToolId.get(m.toolId)) || lastSkillName;
+      result.push({ ...m, skillName: name });
+      continue;
+    }
+    result.push(m);
+  }
+  return result;
 }
 
 /**
@@ -160,6 +213,20 @@ function convertMessage(
         const content = msg.content || '';
         const images = Array.isArray(msg.images) && msg.images.length > 0 ? msg.images : undefined;
         if (!content.trim() && !images) break;
+
+        // Injected skill body (SKILL.md). Rendered as a collapsible skill block;
+        // its name is grafted on in the post-pass that folds skill loads.
+        if (msg.isSkillContent) {
+          converted.push({
+            type: 'assistant',
+            content: unescapeWithMathProtection(decodeHtmlEntities(content)),
+            timestamp: msg.timestamp,
+            isSkillContent: true,
+            toolId: msg.toolId,
+            ...sharedMetadata,
+          });
+          break;
+        }
 
         if (msg.role === 'user') {
           // A subagent (Task) sidechain emits its prompt as a `role: 'user'`

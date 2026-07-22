@@ -242,6 +242,7 @@ export type NormalizedMessage = {
   isLocalCommand?: boolean;
   isLocalCommandStdout?: boolean;
   isCompactSummary?: boolean;
+  isSkillContent?: boolean;
   images?: unknown;
   toolName?: string;
   toolInput?: unknown;
