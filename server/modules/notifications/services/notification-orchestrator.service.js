@@ -199,7 +199,17 @@ function sendWebPushPayload(userId, payload) {
       if (result.status === 'rejected') {
         const statusCode = result.reason?.statusCode;
         if (statusCode === 410 || statusCode === 404) {
+          // Subscription is gone (unsubscribed/expired) — prune it quietly.
           pushSubscriptionsDb.removeSubscription(subscriptions[index].endpoint);
+        } else {
+          // Anything else (e.g. Apple 403 BadJwtToken from a bad VAPID subject)
+          // was previously swallowed, making delivery failures invisible. Log it.
+          const endpoint = subscriptions[index].endpoint || '';
+          const host = endpoint.split('/')[2] || endpoint.slice(0, 40);
+          console.error(
+            `Web push send failed (status ${statusCode ?? 'n/a'}) to ${host}:`,
+            result.reason?.body || result.reason?.message || result.reason
+          );
         }
       }
     });
