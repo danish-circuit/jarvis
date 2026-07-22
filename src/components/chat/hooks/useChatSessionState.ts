@@ -388,6 +388,18 @@ export function useChatSessionState({
 
     const scrolledNearTop = container.scrollTop < 100;
 
+    // Prefetch older messages well before the very top, scaled by viewport
+    // height so the margin is device-appropriate. The margin is much larger on
+    // mobile: a phone viewport is short, so a small trigger means every approach
+    // to the top fires a load that prepends + re-anchors and shoves the scroll
+    // position back down — you can never actually land at the top (or on the
+    // "load earlier" button). Loading several screens early keeps the top
+    // reachable and moves the prepend off-screen, above the viewport, instead of
+    // under the user's thumb.
+    const isMobileViewport = typeof window !== 'undefined' && window.innerWidth < 768;
+    const prefetchScreens = isMobileViewport ? 4 : 2;
+    const withinPrefetchZone = container.scrollTop < container.clientHeight * prefetchScreens;
+
     // "Load all" prompt: appear (with fade-in) when the user reaches the top
     if (scrolledNearTop && hasMoreMessages && !allMessagesLoadedRef.current) {
       if (!wasNearTopRef.current) {
@@ -404,14 +416,12 @@ export function useChatSessionState({
       wasNearTopRef.current = false;
     }
 
-    if (!allMessagesLoadedRef.current) {
-      if (!scrolledNearTop) { topLoadLockRef.current = false; return; }
-      if (topLoadLockRef.current) {
-        if (container.scrollTop > 20) topLoadLockRef.current = false;
-        return;
-      }
-      const didLoad = await loadOlderMessages(container);
-      if (didLoad) topLoadLockRef.current = true;
+    // Auto-load older pages while within the prefetch zone. loadOlderMessages
+    // self-guards against concurrent/duplicate fetches (isLoadingMoreRef), and
+    // after each prepend scrollTop advances past the margin, so this fills the
+    // buffer incrementally rather than loading the whole history at once.
+    if (!allMessagesLoadedRef.current && withinPrefetchZone) {
+      await loadOlderMessages(container);
     }
   }, [hasMoreMessages, isNearBottom, loadOlderMessages]);
 
