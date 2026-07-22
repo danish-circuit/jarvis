@@ -1,6 +1,10 @@
 import type { ChatMessage } from '../types/types';
 
-export const TOOL_GROUP_THRESHOLD = 2;
+// Every groupable tool call is wrapped in a collapsed group container — even a
+// lone one (a "group" of 1) — so tool calls render uniformly behind a compact,
+// expandable header instead of dumping their input/output inline. Consecutive
+// calls of the same tool still merge into a single multi-count group.
+export const TOOL_GROUP_THRESHOLD = 1;
 
 export interface ToolGroupItem {
   _isGroup: true;
@@ -15,8 +19,18 @@ export function isToolGroupItem(item: MessageListItem): item is ToolGroupItem {
   return '_isGroup' in item && (item as ToolGroupItem)._isGroup === true;
 }
 
+// Interactive / decision tools render rich inline UI the user acts on (or reads
+// as the outcome of a turn); collapsing them behind a group header — especially
+// as a group of one — would bury them, so they always render inline.
+const NON_GROUPABLE_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode', 'exit_plan_mode']);
+
 function isGroupableToolMessage(message: ChatMessage): message is ChatMessage & { toolName: string } {
-  return Boolean(message.isToolUse && message.toolName && !message.isSubagentContainer);
+  return Boolean(
+    message.isToolUse &&
+      message.toolName &&
+      !message.isSubagentContainer &&
+      !NON_GROUPABLE_TOOLS.has(message.toolName),
+  );
 }
 
 // Messages that render nothing (e.g. reasoning hidden when showThinking is off)
