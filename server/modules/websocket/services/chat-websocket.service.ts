@@ -12,6 +12,7 @@ import type {
   LLMProvider,
 } from '@/shared/types.js';
 import { parseIncomingJsonObject } from '@/shared/utils.js';
+import { maybeGenerateSessionTitle } from '@/services/session-title.js';
 
 /**
  * Trust boundary for client-supplied image attachments: chat.send options come
@@ -188,6 +189,10 @@ async function handleChatSend(
 
   const clientOptions = (data.options ?? {}) as AnyRecord;
   const command = typeof data.content === 'string' ? data.content : '';
+
+  // Auto-title brand-new sessions from their first prompt. Fire-and-forget so
+  // it never blocks the run; it no-ops when the session already has a name.
+  void maybeGenerateSessionTitle({ sessionId, command });
 
   // The provider runtimes receive the provider-native session id (that is the
   // id their CLI/SDK understands for resume). Brand-new sessions have no

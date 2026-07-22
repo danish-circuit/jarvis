@@ -736,6 +736,23 @@ export function useProjectsState({
         return updated === previousProject ? previousProject : updated;
       });
 
+      // A pure title/summary refresh (e.g. the auto-generated session title) for
+      // the session currently open must update the header right away. The
+      // aliasing branch below only runs when the provider id differs from the
+      // viewed id, so handle the common app-id match here.
+      if (upsert.session.summary?.trim()) {
+        setSelectedSession((previousSession) => {
+          if (
+            !previousSession
+            || previousSession.id !== upsert.sessionId
+            || previousSession.summary === upsert.session.summary
+          ) {
+            return previousSession;
+          }
+          return { ...previousSession, summary: upsert.session.summary };
+        });
+      }
+
       const aliasedSelectedSessionId =
         typeof upsert.providerSessionId === 'string' && upsert.providerSessionId !== upsert.sessionId
           ? upsert.providerSessionId

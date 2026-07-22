@@ -252,6 +252,21 @@ export const chatRunRegistry = {
     return runs.get(appSessionId);
   },
 
+  /**
+   * Pushes a `session_upserted` event to all connected clients for one session,
+   * e.g. after its auto-generated title is persisted, so the sidebar/header
+   * update live without a refresh. Best-effort; failures are logged, not thrown.
+   */
+  broadcastSessionUpsert(appSessionId: string): void {
+    void broadcastCanonicalSessionUpsert(appSessionId).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[ChatRunRegistry] Failed to broadcast session upsert', {
+        appSessionId,
+        error: message,
+      });
+    });
+  },
+
   isProcessing(appSessionId: string): boolean {
     return runs.get(appSessionId)?.status === 'running';
   },
