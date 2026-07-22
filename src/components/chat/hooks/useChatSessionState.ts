@@ -11,7 +11,14 @@ import { createCachedDiffCalculator, type DiffCalculator } from '../utils/messag
 import { normalizedToChatMessages } from './useChatMessages';
 
 const MESSAGES_PER_PAGE = 20;
-const INITIAL_VISIBLE_MESSAGES = 100;
+// Whole conversations are loaded up front on session open (see the main
+// session-load effect), so scroll never triggers pagination — the #1 source of
+// scroll jitter (each paged load re-anchored scrollTop and cancelled momentum
+// flings on mobile). This render window is large enough to show every message
+// of any normal session; content-visibility keeps the off-screen rows cheap.
+// A session larger than this still renders the most recent N with the manual
+// "load earlier" fallback, so a pathological history can't freeze the tab.
+const INITIAL_VISIBLE_MESSAGES = 2000;
 
 interface UseChatSessionStateArgs {
   selectedProject: Project | null;
@@ -606,13 +613,19 @@ export function useChatSessionState({
 
     // Fetch from server → store updates → chatMessages re-derives automatically
     setIsLoadingSessionMessages(true);
+    // Load the entire conversation up front (limit: null) instead of the first
+    // page. This trades a slightly heavier initial load for zero scroll
+    // pagination, which eliminates the paged-load scroll jitter entirely.
     sessionStore.fetchFromServer(selectedSessionId, {
-      limit: MESSAGES_PER_PAGE,
+      limit: null,
       offset: 0,
     }).then(slot => {
       if (slot) {
-        setHasMoreMessages(slot.hasMore);
+        // Everything is loaded — no more pages, no scroll-triggered fetches.
+        setHasMoreMessages(false);
         setTotalMessages(slot.total);
+        allMessagesLoadedRef.current = true;
+        setAllMessagesLoaded(true);
         if (slot.tokenUsage) setTokenBudget(slot.tokenUsage as Record<string, unknown>);
       }
       setIsLoadingSessionMessages(false);
