@@ -79,6 +79,7 @@ export interface NormalizedMessage {
   exitCode?: number;
   actualSessionId?: string;
   parentToolUseId?: string;
+  isSidechain?: boolean;
   subagentTools?: unknown[];
   isFinal?: boolean;
   // Cursor-specific ordering

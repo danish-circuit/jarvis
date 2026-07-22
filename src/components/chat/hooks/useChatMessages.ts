@@ -162,6 +162,13 @@ function convertMessage(
         if (!content.trim() && !images) break;
 
         if (msg.role === 'user') {
+          // A subagent (Task) sidechain emits its prompt as a `role: 'user'`
+          // message, but that prompt came from the parent agent — not the
+          // human. It's already represented by the Task tool block, so drop it
+          // here instead of rendering a misleading user bubble.
+          if (msg.parentToolUseId || msg.isSidechain) {
+            break;
+          }
           // Parse task notifications
           const taskNotif = parseTaskNotification(content);
           if (taskNotif) {

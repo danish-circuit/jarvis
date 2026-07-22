@@ -311,6 +311,16 @@ export class ClaudeSessionsProvider implements IProviderSessions {
     const ts = raw.timestamp || new Date().toISOString();
     const baseId = raw.uuid || generateMessageId('claude');
 
+    // Subagent (Task) turns are marked `isSidechain` in the transcript and
+    // carry a `parent_tool_use_id` on the live SDK stream. A subagent's
+    // `role: "user"` message is the prompt the *parent agent* sent it — not
+    // something the human typed — so it must not render as a user bubble.
+    // We flag it here so the UI can fold it into the Task tool block instead.
+    const isSidechain =
+      raw.isSidechain === true ||
+      Boolean(raw.parentToolUseId) ||
+      Boolean(raw.parent_tool_use_id);
+
     if (raw.message?.role === 'user' && raw.message?.content && raw.isMeta !== true) {
       if (Array.isArray(raw.message.content)) {
         // Image attachments sent through the SDK are persisted as base64
@@ -351,6 +361,7 @@ export class ClaudeSessionsProvider implements IProviderSessions {
                 kind: 'text',
                 role: 'user',
                 content: text,
+                isSidechain: isSidechain || undefined,
                 images: !imagesAttached && imageAttachments.length > 0 ? imageAttachments : undefined,
               }));
               imagesAttached = true;
@@ -373,6 +384,7 @@ export class ClaudeSessionsProvider implements IProviderSessions {
               kind: 'text',
               role: 'user',
               content: textParts,
+              isSidechain: isSidechain || undefined,
               images: imageAttachments.length > 0 ? imageAttachments : undefined,
             }));
             imagesAttached = true;
@@ -477,6 +489,7 @@ export class ClaudeSessionsProvider implements IProviderSessions {
             kind: 'text',
             role: 'user',
             content: text,
+            isSidechain: isSidechain || undefined,
           }));
         }
       }
