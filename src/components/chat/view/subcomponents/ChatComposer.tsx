@@ -31,6 +31,8 @@ import {
 } from '../../../../shared/view/ui';
 
 import CommandMenu from './CommandMenu';
+import PullRequestPill from '../../../pull-request-pill/PullRequestPill';
+import { usePullRequest } from '../../../../hooks/usePullRequest';
 import ActivityIndicator from './ActivityIndicator';
 import ImageAttachment from './ImageAttachment';
 import VoiceInputButton from './VoiceInputButton';
@@ -112,6 +114,7 @@ interface ChatComposerProps {
   placeholder: string;
   isTextareaExpanded: boolean;
   sendByCtrlEnter?: boolean;
+  projectId?: string | null;
 }
 
 export default function ChatComposer({
@@ -169,9 +172,10 @@ export default function ChatComposer({
   onInputFocusChange,
   placeholder,
   isTextareaExpanded,
-  sendByCtrlEnter,
+  projectId,
 }: ChatComposerProps) {
   const { t } = useTranslation('chat');
+  const { pullRequest } = usePullRequest(projectId);
   const commandMenuPosition = useMemo(() => {
     if (!isCommandMenuOpen) {
       return { top: 0, left: 16, bottom: 90 };
@@ -277,13 +281,6 @@ export default function ChatComposer({
 
   const hasQueuedDraft = Boolean(queuedDraft);
   const canQueueDraft = isLoading && Boolean(input.trim());
-  const submitHint = canQueueDraft
-    ? hasQueuedDraft
-      ? t('input.hintText.updateQueued', { defaultValue: 'Enter to update queued message' })
-      : t('input.hintText.queue', { defaultValue: 'Enter to queue your next message' })
-    : sendByCtrlEnter
-      ? t('input.hintText.ctrlEnter')
-      : t('input.hintText.enter');
   const submitAriaLabel = canQueueDraft
     ? hasQueuedDraft
       ? t('input.queue.update', { defaultValue: 'Update queued message' })
@@ -572,13 +569,7 @@ export default function ChatComposer({
           </PromptInputTools>
 
           <div className="flex items-center gap-2">
-            <div
-              className={`hidden text-xs text-muted-foreground/50 transition-opacity duration-200 lg:block ${
-                input.trim() && !canQueueDraft ? 'opacity-0' : 'opacity-100'
-              }`}
-            >
-              {submitHint}
-            </div>
+            {pullRequest && <PullRequestPill pullRequest={pullRequest} />}
             <PromptInputSubmit
               onClick={
                 canQueueDraft

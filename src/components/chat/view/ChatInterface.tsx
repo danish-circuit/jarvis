@@ -450,6 +450,7 @@ function ChatInterface({
           })}
           isTextareaExpanded={isTextareaExpanded}
           sendByCtrlEnter={sendByCtrlEnter}
+          projectId={selectedProject?.projectId ?? null}
         />
         </div>
       </div>

@@ -1,8 +1,10 @@
 import { useTranslation } from 'react-i18next';
 
 import SessionProviderLogo from '../../../llm-logo-provider/SessionProviderLogo';
+import PullRequestPill from '../../../pull-request-pill/PullRequestPill';
 import type { AppTab, Project, ProjectSession } from '../../../../types/app';
 import { usePlugins } from '../../../../contexts/PluginsContext';
+import { usePullRequest } from '../../../../hooks/usePullRequest';
 
 type MainContentTitleProps = {
   activeTab: AppTab;
@@ -51,6 +53,7 @@ export default function MainContentTitle({
 }: MainContentTitleProps) {
   const { t } = useTranslation();
   const { plugins } = usePlugins();
+  const { pullRequest } = usePullRequest(selectedProject?.projectId);
 
   const pluginDisplayName = activeTab.startsWith('plugin:')
     ? plugins.find((p) => p.name === activeTab.replace('plugin:', ''))?.displayName
@@ -89,6 +92,8 @@ export default function MainContentTitle({
           </div>
         )}
       </div>
+
+      {pullRequest && <PullRequestPill pullRequest={pullRequest} />}
     </div>
   );
 }

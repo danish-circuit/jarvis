@@ -1267,6 +1267,80 @@ router.get('/remote-status', async (req, res) => {
   }
 });
 
+/**
+ * Map a `gh pr view` payload to a compact status the pill UI understands.
+ * Status → colour is decided on the client; here we only classify.
+ *   merged      -> purple
+ *   closed      -> red
+ *   draft       -> grey
+ *   mergeQueue  -> orange  (best-effort: auto-merge enabled / queued)
+ *   open        -> green
+ */
+function classifyPullRequest(pr) {
+  const state = (pr.state || '').toUpperCase();
+  if (state === 'MERGED') return 'merged';
+  if (state === 'CLOSED') return 'closed';
+  if (pr.isDraft) return 'draft';
+  // GitHub's REST/gh surface has no explicit "in merge queue" flag. Auto-merge
+  // being enabled on an open PR is the closest reliable signal, so we treat it
+  // as the merge-queue state.
+  if (pr.autoMergeRequest) return 'mergeQueue';
+  return 'open';
+}
+
+// Look up the PR associated with the current branch via the `gh` CLI.
+// Returns { pullRequest: {...} } or { pullRequest: null } when none exists.
+// Never 500s on a missing/unauthenticated gh — the pill just hides itself.
+router.get('/pull-request', async (req, res) => {
+  const { project } = req.query;
+
+  if (!project) {
+    return res.status(400).json({ error: 'Project id is required' });
+  }
+
+  try {
+    const projectPath = await getActualProjectPath(project);
+    await validateGitRepository(projectPath);
+
+    const branch = await getCurrentBranchName(projectPath);
+    validateBranchName(branch);
+
+    const fields = 'number,state,isDraft,url,title,autoMergeRequest';
+    let result;
+    try {
+      result = await spawnAsync('gh', ['pr', 'view', branch, '--json', fields], { cwd: projectPath });
+    } catch (error) {
+      const details = getGitErrorDetails(error).toLowerCase();
+      // "no pull requests found" / "no open pull requests" -> branch has no PR.
+      if (details.includes('no pull request') || details.includes('no open pull request')) {
+        return res.json({ branch, pullRequest: null });
+      }
+      // gh missing, not authenticated, not a GitHub remote, etc. -> unavailable.
+      return res.json({ branch, pullRequest: null, unavailable: true });
+    }
+
+    let pr;
+    try {
+      pr = JSON.parse(result.stdout);
+    } catch {
+      return res.json({ branch, pullRequest: null, unavailable: true });
+    }
+
+    return res.json({
+      branch,
+      pullRequest: {
+        number: pr.number,
+        title: pr.title,
+        url: pr.url,
+        status: classifyPullRequest(pr),
+      },
+    });
+  } catch (error) {
+    console.error('Git pull-request lookup error:', error);
+    res.json({ pullRequest: null, error: error.message });
+  }
+});
+
 // Fetch from remote (using smart remote detection)
 router.post('/fetch', async (req, res) => {
   const { project } = req.body;
