@@ -10,14 +10,15 @@ import { createCachedDiffCalculator, type DiffCalculator } from '../utils/messag
 
 import { normalizedToChatMessages } from './useChatMessages';
 
-const MESSAGES_PER_PAGE = 20;
-// Whole conversations are loaded up front on session open (see the main
-// session-load effect), so scroll never triggers pagination — the #1 source of
-// scroll jitter (each paged load re-anchored scrollTop and cancelled momentum
-// flings on mobile). This render window is large enough to show every message
-// of any normal session; content-visibility keeps the off-screen rows cheap.
-// A session larger than this still renders the most recent N with the manual
-// "load earlier" fallback, so a pathological history can't freeze the tab.
+// Most recent messages fetched when a session opens. Sized so typical sessions
+// open fully within a few seconds; older history loads on demand via the
+// "load all" button. Scroll never triggers pagination — that auto-load was the
+// #1 source of scroll jitter (each paged load re-anchored scrollTop and
+// cancelled momentum flings on mobile).
+const INITIAL_LOAD_COUNT = 200;
+// Render window — large enough to show the whole loaded conversation; content
+// visibility keeps off-screen rows cheap. A session with more rendered than
+// this falls back to the manual "load earlier" control so it can't freeze.
 const INITIAL_VISIBLE_MESSAGES = 2000;
 
 interface UseChatSessionStateArgs {
@@ -332,61 +333,7 @@ export function useChatSessionState({
     return scrollHeight - scrollTop - clientHeight < 50;
   }, []);
 
-  const loadOlderMessages = useCallback(
-    async (container: HTMLDivElement) => {
-      if (!container || isLoadingMoreRef.current || isLoadingMoreMessages) return false;
-      if (allMessagesLoadedRef.current) return false;
-      if (!hasMoreMessages || !selectedSession || !selectedProject) return false;
-
-      isLoadingMoreRef.current = true;
-
-      try {
-        const slot = await sessionStore.fetchMore(selectedSession.id, {
-          limit: MESSAGES_PER_PAGE,
-        });
-        if (!slot) return false;
-        if (slot.serverMessages.length === 0) {
-          if (!slot.hasMore) {
-            setHasMoreMessages(false);
-            allMessagesLoadedRef.current = true;
-            setAllMessagesLoaded(true);
-            if (loadAllOverlayTimerRef.current) {
-              clearTimeout(loadAllOverlayTimerRef.current);
-              loadAllOverlayTimerRef.current = null;
-            }
-            setShowLoadAllOverlay(false);
-          }
-          return false;
-        }
-
-        // Capture the scroll anchor NOW — after the (async) fetch, immediately
-        // before the prepend — not before the await. The fetch has network
-        // latency during which the user keeps scrolling; anchoring to the
-        // pre-fetch position left the view off by however far they moved,
-        // producing a ~90px lurch on every load. Reading it here anchors to
-        // where the user actually is.
-        pendingScrollRestoreRef.current = { height: container.scrollHeight, top: container.scrollTop };
-        setHasMoreMessages(slot.hasMore);
-        setTotalMessages(slot.total);
-        setVisibleMessageCount((prev) => prev + MESSAGES_PER_PAGE);
-        if (!slot.hasMore) {
-          allMessagesLoadedRef.current = true;
-          setAllMessagesLoaded(true);
-          if (loadAllOverlayTimerRef.current) {
-            clearTimeout(loadAllOverlayTimerRef.current);
-            loadAllOverlayTimerRef.current = null;
-          }
-          setShowLoadAllOverlay(false);
-        }
-        return true;
-      } finally {
-        isLoadingMoreRef.current = false;
-      }
-    },
-    [hasMoreMessages, isLoadingMoreMessages, selectedProject, selectedSession, sessionStore],
-  );
-
-  const handleScroll = useCallback(async () => {
+  const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
@@ -395,42 +342,25 @@ export function useChatSessionState({
 
     const scrolledNearTop = container.scrollTop < 100;
 
-    // Prefetch older messages well before the very top, scaled by viewport
-    // height so the margin is device-appropriate. The margin is much larger on
-    // mobile: a phone viewport is short, so a small trigger means every approach
-    // to the top fires a load that prepends + re-anchors and shoves the scroll
-    // position back down — you can never actually land at the top (or on the
-    // "load earlier" button). Loading several screens early keeps the top
-    // reachable and moves the prepend off-screen, above the viewport, instead of
-    // under the user's thumb.
-    const isMobileViewport = typeof window !== 'undefined' && window.innerWidth < 768;
-    const prefetchScreens = isMobileViewport ? 4 : 2;
-    const withinPrefetchZone = container.scrollTop < container.clientHeight * prefetchScreens;
-
-    // "Load all" prompt: appear (with fade-in) when the user reaches the top
+    // Older history loads on demand via the "load all" button (the overlay),
+    // NOT automatically on scroll. Auto-loading re-anchored scrollTop on every
+    // approach to the top, which cancelled momentum flings on mobile (the
+    // jitter) and shoved the view down so the top was never reachable. Instead,
+    // surface the button when the user actually reaches the top and keep it
+    // shown until they scroll away — scrolling stays smooth and the load is
+    // under explicit control (one shot, matching the smooth manual flow).
     if (scrolledNearTop && hasMoreMessages && !allMessagesLoadedRef.current) {
-      if (!wasNearTopRef.current) {
-        wasNearTopRef.current = true;
-        if (loadAllOverlayTimerRef.current) clearTimeout(loadAllOverlayTimerRef.current);
-
-        setShowLoadAllOverlay(true);
-        loadAllOverlayTimerRef.current = setTimeout(() => {
-          setShowLoadAllOverlay(false);
-          loadAllOverlayTimerRef.current = null;
-        }, 2500);
+      wasNearTopRef.current = true;
+      if (loadAllOverlayTimerRef.current) {
+        clearTimeout(loadAllOverlayTimerRef.current);
+        loadAllOverlayTimerRef.current = null;
       }
+      setShowLoadAllOverlay(true);
     } else if (!scrolledNearTop) {
       wasNearTopRef.current = false;
+      setShowLoadAllOverlay(false);
     }
-
-    // Auto-load older pages while within the prefetch zone. loadOlderMessages
-    // self-guards against concurrent/duplicate fetches (isLoadingMoreRef), and
-    // after each prepend scrollTop advances past the margin, so this fills the
-    // buffer incrementally rather than loading the whole history at once.
-    if (!allMessagesLoadedRef.current && withinPrefetchZone) {
-      await loadOlderMessages(container);
-    }
-  }, [hasMoreMessages, isNearBottom, loadOlderMessages]);
+  }, [hasMoreMessages, isNearBottom]);
 
   // rAF-throttled wrapper around handleScroll, shared by the scroll listener and
   // the wheel/touch handlers. Coalesces a burst of events into one layout-read +
@@ -613,19 +543,16 @@ export function useChatSessionState({
 
     // Fetch from server → store updates → chatMessages re-derives automatically
     setIsLoadingSessionMessages(true);
-    // Load the entire conversation up front (limit: null) instead of the first
-    // page. This trades a slightly heavier initial load for zero scroll
-    // pagination, which eliminates the paged-load scroll jitter entirely.
+    // Load the most recent INITIAL_LOAD_COUNT messages on open. Older history is
+    // loaded on demand via the "load all" button, never auto-loaded on scroll —
+    // so scrolling stays smooth and the top is always reachable.
     sessionStore.fetchFromServer(selectedSessionId, {
-      limit: null,
+      limit: INITIAL_LOAD_COUNT,
       offset: 0,
     }).then(slot => {
       if (slot) {
-        // Everything is loaded — no more pages, no scroll-triggered fetches.
-        setHasMoreMessages(false);
+        setHasMoreMessages(slot.hasMore);
         setTotalMessages(slot.total);
-        allMessagesLoadedRef.current = true;
-        setAllMessagesLoaded(true);
         if (slot.tokenUsage) setTokenBudget(slot.tokenUsage as Record<string, unknown>);
       }
       setIsLoadingSessionMessages(false);
