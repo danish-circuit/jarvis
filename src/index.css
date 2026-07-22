@@ -588,20 +588,19 @@
     clip-path: inset(-8px -8px 0 -8px);
   }
 
+  /*
+   * Intentionally NO content-visibility here. content-visibility:auto renders
+   * off-screen rows with an *estimated* height (contain-intrinsic-size); on the
+   * first scroll-through each row's real height replaces the estimate, causing
+   * layout shifts + first-paint hitches — the "jittery until you scroll all the
+   * way up, then smooth" behavior (the sizes cache after one pass). Measured on
+   * a throttled phone: 32 shifting frames (up to 216px) cold vs 0 with it off.
+   * `contain` still isolates each message's layout/paint for cheap scrolling
+   * without the height-estimate jitter; message counts are bounded by the
+   * initial-load cap + manual "load all", so full up-front layout stays fine.
+   */
   .chat-message {
     contain: layout style paint;
-    content-visibility: auto;
-    contain-intrinsic-size: auto 180px;
-  }
-
-  .chat-message.assistant {
-    contain-intrinsic-size: auto 240px;
-  }
-
-  .chat-message.user,
-  .chat-message.tool,
-  .chat-message.error {
-    contain-intrinsic-size: auto 96px;
   }
 
   /* Mobile touch optimization and safe areas */
