@@ -238,13 +238,15 @@ function mapCliOptionsToSDK(options = {}) {
  * @param {string} sessionId - Session identifier
  * @param {Object} queryInstance - SDK query instance
  * @param {Object} writer - WebSocket writer for reconnect support
+ * @param {AbortController} abortController - Controller to cancel the query
  */
-function addSession(sessionId, queryInstance, writer = null) {
+function addSession(sessionId, queryInstance, writer = null, abortController = null) {
   activeSessions.set(sessionId, {
     instance: queryInstance,
     startTime: Date.now(),
     status: 'active',
-    writer
+    writer,
+    abortController
   });
 }
 
@@ -489,6 +491,14 @@ async function queryClaudeSDK(command, options = {}, ws) {
       effortModels,
     });
 
+    // Mode-independent cancellation. Plain-text turns run in single-message
+    // input mode, where the SDK's interrupt() control request can never be
+    // delivered (it hangs until the query closes on its own). abortController
+    // works in every input mode, so it — not interrupt() — is what the Stop
+    // button relies on to actually kill the run.
+    const abortController = new AbortController();
+    sdkOptions.abortController = abortController;
+
     const mcpServers = await loadMcpConfig(options.cwd);
     if (mcpServers) {
       sdkOptions.mcpServers = mcpServers;
@@ -627,7 +637,7 @@ async function queryClaudeSDK(command, options = {}, ws) {
 
     // Track the query instance for abort capability
     if (capturedSessionId) {
-      addSession(capturedSessionId, queryInstance, ws);
+      addSession(capturedSessionId, queryInstance, ws, abortController);
     }
 
     // Process streaming messages
@@ -637,7 +647,7 @@ async function queryClaudeSDK(command, options = {}, ws) {
       if (message.session_id && !capturedSessionId) {
 
         capturedSessionId = message.session_id;
-        addSession(capturedSessionId, queryInstance, ws);
+        addSession(capturedSessionId, queryInstance, ws, abortController);
 
         // Set session ID on writer
         if (ws.setSessionId && typeof ws.setSessionId === 'function') {
@@ -744,12 +754,26 @@ async function abortClaudeSDKSession(sessionId) {
   try {
     console.log(`Aborting SDK session: ${sessionId}`);
 
-    // Mark before interrupting so the run loop knows not to emit its own
+    // Mark before aborting so the run loop knows not to emit its own
     // terminal complete (the abort handler sends the aborted one).
     abortedSessionIds.add(sessionId);
 
-    // Call interrupt() on the query instance
-    await session.instance.interrupt();
+    // abortController is the reliable path: it cancels the query in every
+    // input mode, whereas interrupt() is a control request that only works
+    // in streaming-input mode and otherwise hangs until the query closes on
+    // its own. Fire the controller first, then best-effort interrupt().
+    if (session.abortController) {
+      session.abortController.abort();
+    }
+
+    // interrupt() lets the CLI wind down gracefully when it's supported; a
+    // rejection (e.g. "Query closed before response received") is expected
+    // once the abortController has already torn the query down, so swallow it.
+    try {
+      await session.instance.interrupt();
+    } catch (interruptError) {
+      console.log(`interrupt() no-op for aborted session ${sessionId}: ${interruptError?.message || interruptError}`);
+    }
 
     // Update session status
     session.status = 'aborted';
