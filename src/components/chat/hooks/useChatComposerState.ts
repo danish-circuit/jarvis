@@ -12,6 +12,7 @@ import type {
 import { useDropzone } from 'react-dropzone';
 
 import { authenticatedFetch } from '../../../utils/api';
+import { useDeviceSettings } from '../../../hooks/useDeviceSettings';
 import type { MarkSessionProcessing } from '../../../hooks/useSessionProtection';
 import { grantClaudeToolPermission } from '../utils/chatPermissions';
 import {
@@ -226,6 +227,11 @@ export function useChatComposerState({
   const [imageErrors, setImageErrors] = useState<Map<string, string>>(new Map());
   const [isTextareaExpanded, setIsTextareaExpanded] = useState(false);
   const [commandModalPayload, setCommandModalPayload] = useState<CommandModalPayload | null>(null);
+
+  // On mobile the on-screen keyboard's Enter key should insert a newline, not
+  // send the message — otherwise every line break fires a submit. Sending is
+  // done via the explicit send button instead.
+  const { isMobile } = useDeviceSettings({ trackPWA: false });
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputHighlightRef = useRef<HTMLDivElement>(null);
@@ -1057,7 +1063,14 @@ export function useChatComposerState({
         if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
           event.preventDefault();
           handleSubmit(event);
-        } else if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !sendByCtrlEnter) {
+        } else if (
+          !event.shiftKey &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !sendByCtrlEnter &&
+          !isMobile
+        ) {
+          // On mobile, let plain Enter insert a newline instead of sending.
           event.preventDefault();
           handleSubmit(event);
         }
@@ -1068,6 +1081,7 @@ export function useChatComposerState({
       handleCommandMenuKeyDown,
       handleFileMentionsKeyDown,
       handleSubmit,
+      isMobile,
       sendByCtrlEnter,
       showCommandMenu,
       showFileDropdown,
