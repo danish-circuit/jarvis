@@ -15,7 +15,19 @@ type OpenCodeCredentialsStatus = {
   error?: string;
 };
 
+/**
+ * Provider API keys OpenCode can pick up straight from the environment, in
+ * display priority order — the first one that is set is what the auth status
+ * reports. Each name is the env var OpenCode's own catalog (models.dev) reads
+ * for that provider, so a key listed here also makes its models show up in
+ * `opencode models`.
+ *
+ * Fireworks leads because that is the provider this deployment runs on; the
+ * box also carries an `ANTHROPIC_API_KEY` for Claude Code, which would
+ * otherwise mask it.
+ */
 const OPENCODE_ENV_CREDENTIAL_KEYS = [
+  'FIREWORKS_API_KEY',
   'ANTHROPIC_API_KEY',
   'OPENAI_API_KEY',
   'GOOGLE_GENERATIVE_AI_API_KEY',
