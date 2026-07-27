@@ -54,7 +54,9 @@ export const OPENCODE_FALLBACK_MODELS: ProviderModelsDefinition = {
 };
 
 const OPEN_CODE_MODELS_TIMEOUT_MS = 20_000;
-const MODEL_ID_LINE = /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/i;
+// `<provider>/<model>`, where the model part may itself be a path — Fireworks
+// ids look like `fireworks-ai/accounts/fireworks/models/deepseek-v4-flash`.
+const MODEL_ID_LINE = /^[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)+$/i;
 // cross-spawn resolves .cmd shims/PATHEXT on Windows and delegates to
 // child_process.spawn everywhere else.
 const spawnFunction = crossSpawn;
@@ -233,18 +235,29 @@ const isSupportedOpenCodeModelId = (id: string): boolean => (
   readOpenCodeModelParts(id).upstreamProvider.toLowerCase() !== 'google'
 );
 
+/**
+ * Builds the fully-qualified `<provider>/<model>` id OpenCode expects on
+ * `--model`.
+ *
+ * A model id is not always a bare slug: Fireworks reports ids that are
+ * themselves paths (`accounts/fireworks/models/deepseek-v4-flash`). Treating
+ * any embedded slash as "already qualified" dropped `providerID` for those,
+ * producing an id OpenCode cannot resolve — and attributing the model to a
+ * bogus "accounts" provider in the UI. Qualify unless the id genuinely starts
+ * with its provider.
+ */
 const readOpenCodeVerboseModelId = (model: OpenCodeVerboseModel): string | null => {
   const id = readOptionalString(model.id);
   if (!id) {
     return null;
   }
 
-  if (id.includes('/')) {
+  const upstreamProvider = readOptionalString(model.providerID);
+  if (!upstreamProvider || id === upstreamProvider || id.startsWith(`${upstreamProvider}/`)) {
     return id;
   }
 
-  const upstreamProvider = readOptionalString(model.providerID);
-  return upstreamProvider ? `${upstreamProvider}/${id}` : id;
+  return `${upstreamProvider}/${id}`;
 };
 
 const labelForOpenCodeModelId = (id: string): string => {
@@ -253,8 +266,11 @@ const labelForOpenCodeModelId = (id: string): string => {
     return fallbackLabel;
   }
 
+  // The slug can be a path (`accounts/fireworks/models/deepseek-v4-flash`);
+  // only its last segment names the model. Verbose listings carry a real
+  // `name`, so this derived label is the plain-listing fallback.
   const { slug } = readOpenCodeModelParts(id);
-  return formatOpenCodeModelSlug(slug);
+  return formatOpenCodeModelSlug(slug.slice(slug.lastIndexOf('/') + 1));
 };
 
 const descriptionForOpenCodeModelId = (id: string): string => {

@@ -140,3 +140,63 @@ google/model-alpha
     },
   ]);
 });
+
+test('OpenCode models provider qualifies path-shaped model ids with their provider', () => {
+  // Fireworks reports ids that are themselves paths. Dropping `providerID`
+  // for those yields a `--model` value OpenCode cannot resolve.
+  const definition = buildOpenCodeDefinitionFromVerboseModels([
+    {
+      id: 'accounts/fireworks/models/deepseek-v4-flash',
+      name: 'DeepSeek V4 Flash',
+      providerID: 'fireworks-ai',
+    },
+    {
+      id: 'accounts/fireworks/routers/kimi-k2p6-fast',
+      name: 'Kimi K2.6 Fast',
+      providerID: 'fireworks-ai',
+    },
+  ]);
+
+  assert.deepEqual(definition.OPTIONS, [
+    {
+      value: 'fireworks-ai/accounts/fireworks/models/deepseek-v4-flash',
+      label: 'DeepSeek V4 Flash',
+      description: 'fireworks-ai - fireworks-ai/accounts/fireworks/models/deepseek-v4-flash',
+      effort: undefined,
+    },
+    {
+      value: 'fireworks-ai/accounts/fireworks/routers/kimi-k2p6-fast',
+      label: 'Kimi K2.6 Fast',
+      description: 'fireworks-ai - fireworks-ai/accounts/fireworks/routers/kimi-k2p6-fast',
+      effort: undefined,
+    },
+  ]);
+});
+
+test('OpenCode models provider leaves already-qualified ids untouched', () => {
+  const definition = buildOpenCodeDefinitionFromVerboseModels([
+    { id: 'anthropic/claude-sonnet-5', name: 'Claude Sonnet 5', providerID: 'anthropic' },
+  ]);
+
+  assert.equal(definition.OPTIONS[0].value, 'anthropic/claude-sonnet-5');
+});
+
+test('OpenCode models provider keeps path-shaped ids when parsing plain CLI output', () => {
+  const ids = parseOpenCodeModelsStdout(`
+fireworks-ai/accounts/fireworks/models/deepseek-v4-flash
+anthropic/claude-sonnet-5
+not a model
+`);
+
+  assert.deepEqual(ids, [
+    'fireworks-ai/accounts/fireworks/models/deepseek-v4-flash',
+    'anthropic/claude-sonnet-5',
+  ]);
+
+  const definition = buildOpenCodeDefinitionFromIds(ids);
+  assert.deepEqual(definition.OPTIONS[0], {
+    value: 'fireworks-ai/accounts/fireworks/models/deepseek-v4-flash',
+    label: 'Deepseek V4 Flash',
+    description: 'fireworks-ai - fireworks-ai/accounts/fireworks/models/deepseek-v4-flash',
+  });
+});
