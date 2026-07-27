@@ -502,6 +502,37 @@ export type ProviderAuthStatus = {
   error?: string;
 };
 
+/**
+ * Installed vs published version of a provider's CLI.
+ *
+ * `executablePath` is the binary the server would actually spawn, not merely
+ * the first match on PATH — a box can carry several installs, and only the
+ * resolved one governs what sessions run.
+ */
+export type ProviderCliVersion = {
+  provider: LLMProvider;
+  executablePath: string;
+  currentVersion: string | null;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+};
+
+/**
+ * Outcome of running a provider CLI's self-updater, reported as the
+ * before/after of the resolved binary rather than the updater's exit code.
+ */
+export type ProviderCliUpdateResult = {
+  provider: LLMProvider;
+  executablePath: string;
+  previousVersion: string | null;
+  currentVersion: string | null;
+  changed: boolean;
+  /** Updater claimed success but the resolved binary did not move. */
+  unchangedDespiteSuccess: boolean;
+  output: string;
+  error?: string;
+};
+
 // ---------------------------
 //----------------- SHARED DATABASE CREDENTIAL TYPES ------------
 /**

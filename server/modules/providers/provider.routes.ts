@@ -2,6 +2,10 @@ import express, { type Request, type Response } from 'express';
 
 import { providerAuthService } from '@/modules/providers/services/provider-auth.service.js';
 import { providerCapabilitiesService } from '@/modules/providers/services/provider-capabilities.service.js';
+import {
+  ProviderCliVersionUnsupportedError,
+  providerCliVersionService,
+} from '@/modules/providers/services/provider-cli-version.service.js';
 import { providerMcpService } from '@/modules/providers/services/mcp.service.js';
 import { providerModelsService } from '@/modules/providers/services/provider-models.service.js';
 import { providerSkillsService } from '@/modules/providers/services/skills.service.js';
@@ -37,6 +41,20 @@ const readPathParam = (value: unknown, name: string): string => {
 
 const normalizeProviderParam = (value: unknown): string =>
   readPathParam(value, 'provider').trim().toLowerCase();
+
+/**
+ * A provider without a CLI descriptor is a bad request, not a server fault —
+ * the caller asked about something this endpoint does not manage.
+ */
+const toCliVersionRouteError = (error: unknown): unknown => {
+  if (error instanceof ProviderCliVersionUnsupportedError) {
+    return new AppError(error.message, {
+      code: 'CLI_VERSION_UNSUPPORTED',
+      statusCode: 400,
+    });
+  }
+  return error;
+};
 
 const SESSION_ID_PATTERN = /^[a-zA-Z0-9._-]{1,120}$/;
 
@@ -381,6 +399,36 @@ router.get(
     const provider = parseProvider(req.params.provider);
     const status = await providerAuthService.getProviderAuthStatus(provider);
     res.json(createApiSuccessResponse(status));
+  }),
+);
+
+/**
+ * Reports the version of the provider CLI this server would actually spawn,
+ * next to the latest published one, and upgrades it in place on request.
+ */
+router.get(
+  '/:provider/cli-version',
+  asyncHandler(async (req: Request, res: Response) => {
+    const provider = parseProvider(req.params.provider);
+    try {
+      const version = await providerCliVersionService.getCliVersion(provider);
+      res.json(createApiSuccessResponse(version));
+    } catch (error) {
+      throw toCliVersionRouteError(error);
+    }
+  }),
+);
+
+router.post(
+  '/:provider/cli-version/update',
+  asyncHandler(async (req: Request, res: Response) => {
+    const provider = parseProvider(req.params.provider);
+    try {
+      const result = await providerCliVersionService.updateCli(provider);
+      res.json(createApiSuccessResponse(result));
+    } catch (error) {
+      throw toCliVersionRouteError(error);
+    }
   }),
 );
 

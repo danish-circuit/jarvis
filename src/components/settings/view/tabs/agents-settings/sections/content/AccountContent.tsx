@@ -4,6 +4,8 @@ import { Badge, Button } from '../../../../../../../shared/view/ui';
 import SessionProviderLogo from '../../../../../../llm-logo-provider/SessionProviderLogo';
 import type { AgentProvider, AuthStatus } from '../../../../../types/types';
 
+import CliVersionSection from './CliVersionSection';
+
 type AccountContentProps = {
   agent: AgentProvider;
   authStatus: AuthStatus;
@@ -134,6 +136,13 @@ export default function AccountContent({ agent, authStatus, onLogin }: AccountCo
               </div>
             </div>
           )}
+
+          <CliVersionSection
+            agent={agent}
+            textClass={config.textClass}
+            subtextClass={config.subtextClass}
+            buttonClass={config.buttonClass}
+          />
 
           {authStatus.error && (
             <div className="border-t border-border/50 pt-4">

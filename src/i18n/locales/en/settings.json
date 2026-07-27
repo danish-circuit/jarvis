@@ -362,7 +362,23 @@
       "button": "Login",
       "reLoginButton": "Re-login"
     },
-    "error": "Error: {{error}}"
+    "error": "Error: {{error}}",
+    "cli": {
+      "title": "CLI version",
+      "checking": "Checking installed version…",
+      "upToDate": "Version {{current}} · up to date",
+      "updateAvailable": "Version {{current}} installed · {{latest}} available",
+      "updateBadge": "Update available",
+      "notInstalled": "CLI not found on this machine",
+      "error": "Could not read version: {{error}}",
+      "updateButton": "Update CLI",
+      "updating": "Updating…",
+      "recheck": "Re-check version",
+      "updated": "Updated {{change}}",
+      "alreadyCurrent": "Already on the latest version",
+      "updateNoop": "Updater ran but {{path}} is unchanged ({{state}}) — another install may be shadowing it",
+      "updateFailed": "Update failed: {{error}}"
+    }
   },
   "permissions": {
     "title": "Permission Settings",
