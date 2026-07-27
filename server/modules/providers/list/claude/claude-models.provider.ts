@@ -74,6 +74,24 @@ export const CLAUDE_FALLBACK_MODELS: ProviderModelsDefinition = {
       },
     },
     {
+      // Full model ID rather than a short alias: `opus` still resolves to Opus
+      // 4.8 on the CLI, and there is no `opus-5` alias (the CLI rejects it).
+      // `claude-opus-5` is accepted directly and reports back as claude-opus-5.
+      value: 'claude-opus-5',
+      label: 'Opus 5',
+      description: 'Opus 5 · Most capable for complex agentic coding · 1M context · $5/$25 per Mtok',
+      effort: {
+        default: 'high',
+        values: [
+          { value: 'low' },
+          { value: 'medium' },
+          { value: 'high' },
+          { value: 'xhigh' },
+          { value: 'max' },
+        ],
+      },
+    },
+    {
       value: 'opus',
       label: 'Opus',
       description: 'Opus 4.8 · Best for everyday, complex tasks · ~2× usage vs Sonnet',
