@@ -223,6 +223,32 @@ function isInternalContent(content: string): boolean {
 }
 
 /**
+ * Flattens a Claude message payload's text, whether it arrived as a bare string
+ * or as an array of content blocks. Non-text blocks (images, tool results) are
+ * ignored — callers that care about them inspect the raw content themselves.
+ */
+function extractMessageText(content: unknown): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .filter((part: AnyRecord) => part?.type === 'text')
+      .map((part: AnyRecord) => part.text || '')
+      .join('\n');
+  }
+  return '';
+}
+
+/**
+ * Newer Claude versions prefix an injected SKILL.md with the skill's own
+ * directory. Used as a version-independent fallback for recognizing a skill
+ * load when the message carries no `sourceToolUseID` link (older transcripts,
+ * or a live stream event we could not correlate to its `Skill` tool call).
+ */
+const SKILL_BODY_PREFIX = 'Base directory for this skill:';
+
+/**
  * Claude wraps local slash-command metadata in lightweight XML-like tags inside
  * a plain string payload. We intentionally parse only the small tag surface we
  * care about instead of introducing a generic XML parser for untrusted history.
@@ -327,31 +353,30 @@ export class ClaudeSessionsProvider implements IProviderSessions {
     // the live stream renders it as a user bubble — both wrong. Tag it as skill
     // content linked to its tool call so the UI can fold it into a collapsible
     // skill block. Must run before the isMeta guard below.
-    if (raw.message?.role === 'user' && raw.sourceToolUseID && raw.message?.content) {
-      const injectedContent = raw.message.content;
-      const injectedText =
-        typeof injectedContent === 'string'
-          ? injectedContent
-          : Array.isArray(injectedContent)
-            ? injectedContent
-                .filter((part: AnyRecord) => part?.type === 'text')
-                .map((part: AnyRecord) => part.text || '')
-                .join('\n')
-            : '';
-      if (injectedText.trim()) {
-        messages.push(createNormalizedMessage({
-          id: baseId,
-          sessionId,
-          timestamp: ts,
-          provider: PROVIDER,
-          kind: 'text',
-          role: 'assistant',
-          content: injectedText,
-          isSkillContent: true,
-          toolId: String(raw.sourceToolUseID),
-        }));
+    //
+    // The live SDK stream carries neither field, so `claude-sdk.js` restores
+    // `sourceToolUseID` from stream order before we see the event; the body
+    // prefix below is the fallback for anything that slips through.
+    if (raw.message?.role === 'user' && raw.message?.content) {
+      const injectedText = extractMessageText(raw.message.content);
+      const isSkillBody =
+        Boolean(raw.sourceToolUseID) || injectedText.trimStart().startsWith(SKILL_BODY_PREFIX);
+      if (isSkillBody) {
+        if (injectedText.trim()) {
+          messages.push(createNormalizedMessage({
+            id: baseId,
+            sessionId,
+            timestamp: ts,
+            provider: PROVIDER,
+            kind: 'text',
+            role: 'assistant',
+            content: injectedText,
+            isSkillContent: true,
+            toolId: raw.sourceToolUseID ? String(raw.sourceToolUseID) : undefined,
+          }));
+        }
+        return messages;
       }
-      return messages;
     }
 
     if (raw.message?.role === 'user' && raw.message?.content && raw.isMeta !== true) {
@@ -361,16 +386,7 @@ export class ClaudeSessionsProvider implements IProviderSessions {
       // stream does not carry that flag — so detect it by the stable prefix as
       // well. Either way, emit it as an assistant-authored summary (the UI
       // collapses it) so it never renders as a user bubble on either path.
-      const rawContent = raw.message.content;
-      const compactText =
-        typeof rawContent === 'string'
-          ? rawContent
-          : Array.isArray(rawContent)
-            ? rawContent
-                .filter((part: AnyRecord) => part?.type === 'text')
-                .map((part: AnyRecord) => part.text || '')
-                .join('\n')
-            : '';
+      const compactText = extractMessageText(raw.message.content);
       const isCompactContinuation =
         (raw.isCompactSummary === true && compactText.trim().length > 0) ||
         compactText.trimStart().startsWith('This session is being continued from a previous conversation');

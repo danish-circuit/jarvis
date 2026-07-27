@@ -21,6 +21,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 
 import { buildClaudeUserContent, normalizeImageDescriptors } from './shared/image-attachments.js';
 import { CLAUDE_FALLBACK_MODELS } from './modules/providers/list/claude/claude-models.provider.js';
+import { createSkillInjectionAnnotator } from './modules/providers/list/claude/claude-skill-injection.js';
 import { providerModelsService } from './modules/providers/services/provider-models.service.js';
 import { resolveClaudeCodeExecutablePath } from './shared/claude-cli-path.js';
 import {
@@ -642,6 +643,7 @@ async function queryClaudeSDK(command, options = {}, ws) {
 
     // Process streaming messages
     console.log('Starting async generator loop for session:', capturedSessionId || 'NEW');
+    const annotateSkillInjection = createSkillInjectionAnnotator();
     for await (const message of queryInstance) {
       // Capture session ID from first message
       if (message.session_id && !capturedSessionId) {
@@ -664,7 +666,7 @@ async function queryClaudeSDK(command, options = {}, ws) {
       }
 
       // Transform and normalize message via adapter
-      const transformedMessage = transformMessage(message);
+      const transformedMessage = annotateSkillInjection(transformMessage(message));
       const sid = capturedSessionId || sessionId || null;
 
       // Use adapter to normalize SDK events into NormalizedMessage[]
