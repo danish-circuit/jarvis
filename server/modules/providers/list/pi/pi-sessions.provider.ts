@@ -148,6 +148,29 @@ export class PiSessionsProvider implements IProviderSessions {
         })];
       }
 
+      // Thinking is emitted once per completed block, not per delta.
+      // `thinking` is a discrete message kind that the UI renders as its own
+      // collapsible "Thought for…" row and the store never merges consecutive
+      // ones, so streaming deltas here produced one row per token. Pi's
+      // `thinking_end` carries the whole block, which matches how the Claude
+      // adapter emits complete blocks and keeps this function stateless.
+      //
+      // A turn that dies mid-block therefore shows no thinking live; it still
+      // appears on reload, because the history path reads the persisted blocks.
+      if (eventType === 'thinking_end') {
+        const thinking = readOptionalString(event?.content) ?? '';
+        return thinking.trim()
+          ? [createNormalizedMessage({
+            ...base,
+            id: generateMessageId('pi_thinking'),
+            kind: 'thinking',
+            content: thinking,
+          })]
+          : [];
+      }
+
+      // Text stays delta-based: `stream_delta` is concatenated into the live
+      // assistant bubble, so the user sees the reply as it is produced.
       const delta = readOptionalString(event?.delta) ?? '';
       if (!delta) {
         return [];
@@ -158,15 +181,6 @@ export class PiSessionsProvider implements IProviderSessions {
           ...base,
           id: generateMessageId('pi_text'),
           kind: 'stream_delta',
-          content: delta,
-        })];
-      }
-
-      if (eventType === 'thinking_delta') {
-        return [createNormalizedMessage({
-          ...base,
-          id: generateMessageId('pi_thinking'),
-          kind: 'thinking',
           content: delta,
         })];
       }

@@ -321,11 +321,34 @@ test('normalizeMessage maps live RPC events', () => {
   assert.equal(textDelta[0].kind, 'stream_delta');
   assert.equal(textDelta[0].content, 'hello');
 
-  const thinkingDelta = provider.normalizeMessage(
-    { type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: 'hmm' } },
+  // Thinking arrives once per completed block. Deltas must NOT each become a
+  // message: `thinking` renders as its own collapsible row and consecutive ones
+  // are never merged, so per-delta emission filled the pane with hundreds of
+  // "Thought for a few seconds" rows for a single reasoning block.
+  assert.deepEqual(
+    provider.normalizeMessage(
+      { type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: 'hmm' } },
+      'sess-1',
+    ),
+    [],
+  );
+
+  const thinkingEnd = provider.normalizeMessage(
+    { type: 'message_update', assistantMessageEvent: { type: 'thinking_end', content: 'hmm, let me check' } },
     'sess-1',
   );
-  assert.equal(thinkingDelta[0].kind, 'thinking');
+  assert.equal(thinkingEnd.length, 1);
+  assert.equal(thinkingEnd[0].kind, 'thinking');
+  assert.equal(thinkingEnd[0].content, 'hmm, let me check');
+
+  // An empty block is dropped rather than rendering a blank row.
+  assert.deepEqual(
+    provider.normalizeMessage(
+      { type: 'message_update', assistantMessageEvent: { type: 'thinking_end', content: '   ' } },
+      'sess-1',
+    ),
+    [],
+  );
 
   const toolStart = provider.normalizeMessage(
     { type: 'tool_execution_start', toolCallId: 'call_1', toolName: 'bash', args: { command: 'ls' } },
