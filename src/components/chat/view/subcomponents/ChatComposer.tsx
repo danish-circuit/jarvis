@@ -120,7 +120,6 @@ interface ChatComposerProps {
   onInputFocusChange?: (focused: boolean) => void;
   placeholder: string;
   isTextareaExpanded: boolean;
-  sendByCtrlEnter?: boolean;
   projectId?: string | null;
 }
 
@@ -150,7 +149,6 @@ export default function ChatComposer({
   onClearInput,
   onSubmit,
   isDragActive,
-  sendByCtrlEnter,
   queuedDraft,
   onEditQueuedDraft,
   onDeleteQueuedDraft,
@@ -234,13 +232,6 @@ export default function ChatComposer({
 
   const hasQueuedDraft = Boolean(queuedDraft);
   const canQueueDraft = isLoading && Boolean(input.trim() || attachedFiles.length > 0);
-  const submitHint = canQueueDraft
-    ? hasQueuedDraft
-      ? t('input.hintText.updateQueued', { defaultValue: 'Enter to update queued message' })
-      : t('input.hintText.queue', { defaultValue: 'Enter to queue your next message' })
-    : sendByCtrlEnter
-      ? t('input.hintText.ctrlEnter')
-      : t('input.hintText.enter');
   const submitAriaLabel = canQueueDraft
     ? hasQueuedDraft
       ? t('input.queue.update', { defaultValue: 'Update queued message' })
@@ -429,14 +420,6 @@ export default function ChatComposer({
 
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             {pullRequest && <PullRequestPill pullRequest={pullRequest} />}
-            <div
-              className={`hidden text-xs text-muted-foreground/50 transition-opacity duration-200 lg:block ${
-                input.trim() && !canQueueDraft ? 'opacity-0' : 'opacity-100'
-              }`}
-            >
-              {submitHint}
-            </div>
-
             <ComposerModelMenu
               effort={effort}
               effortOptions={availableEffortOptions}

@@ -179,6 +179,26 @@ export class PiSessionsProvider implements IProviderSessions {
           : [];
       }
 
+      // Close the streaming bubble at the end of each text block.
+      //
+      // The client keeps ONE streaming bubble per session and accumulates every
+      // `stream_delta` into it; `stream_end` flushes it into a finished text
+      // message and resets the accumulator. Emitting `stream_end` only at
+      // `agent_end` therefore merged every text block of a turn into a single
+      // bubble, so its text matched no individual persisted block. Since the
+      // store dedupes live against server rows by exact text equality
+      // (dedupeAdjacentAssistantEchoes), nothing collapsed and the whole turn
+      // rendered twice — once run-together from the stream, once correctly from
+      // history. Per-block boundaries make each live row equal exactly one
+      // server row, which both fixes the duplication and preserves streaming.
+      if (eventType === 'text_end') {
+        return [createNormalizedMessage({
+          ...base,
+          id: generateMessageId('pi_text_end'),
+          kind: 'stream_end',
+        })];
+      }
+
       // Text stays delta-based: `stream_delta` is concatenated into the live
       // assistant bubble, so the user sees the reply as it is produced.
       const delta = readTextValue(event?.delta);

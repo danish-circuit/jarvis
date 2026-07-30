@@ -367,6 +367,19 @@ test('normalizeMessage maps live RPC events', () => {
 
   assert.equal(provider.normalizeMessage({ type: 'agent_end' }, 'sess-1')[0].kind, 'stream_end');
 
+  // Each text block must close its own streaming bubble. The client accumulates
+  // deltas into ONE bubble per session and only flushes on `stream_end`, so
+  // without this a multi-block turn became a single run-together bubble whose
+  // text matched no persisted block — and the store's text-equality dedupe then
+  // rendered the whole turn twice.
+  assert.equal(
+    provider.normalizeMessage(
+      { type: 'message_update', assistantMessageEvent: { type: 'text_end', content: 'done' } },
+      'sess-1',
+    )[0].kind,
+    'stream_end',
+  );
+
   // A successful turn's message_end must not produce a bubble of its own.
   assert.deepEqual(
     provider.normalizeMessage(
