@@ -8,17 +8,14 @@ import {
 } from '@/modules/providers/list/pi/pi-session-file.js';
 import type { IProviderModels } from '@/shared/interfaces.js';
 import type {
-  ProviderChangeActiveModelInput,
   ProviderCurrentActiveModel,
   ProviderModelOption,
   ProviderModelsDefinition,
-  ProviderSessionActiveModelChange,
 } from '@/shared/types.js';
 import {
   buildDefaultProviderCurrentActiveModel,
   readObjectRecord,
   readOptionalString,
-  writeProviderSessionActiveModelChange,
 } from '@/shared/utils.js';
 
 /**
@@ -271,9 +268,4 @@ export class PiProviderModels implements IProviderModels {
     return buildDefaultProviderCurrentActiveModel(await this.getSupportedModels());
   }
 
-  async changeActiveModel(
-    input: ProviderChangeActiveModelInput,
-  ): Promise<ProviderSessionActiveModelChange> {
-    return writeProviderSessionActiveModelChange('pi', input);
-  }
 }

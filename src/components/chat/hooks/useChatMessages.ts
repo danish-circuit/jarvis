@@ -212,7 +212,8 @@ function convertMessage(
       case 'text': {
         const content = msg.content || '';
         const images = Array.isArray(msg.images) && msg.images.length > 0 ? msg.images : undefined;
-        if (!content.trim() && !images) break;
+        const files = Array.isArray(msg.files) && msg.files.length > 0 ? msg.files : undefined;
+        if (!content.trim() && !images && !files) break;
 
         // Injected skill body (SKILL.md). Rendered as a collapsible skill block;
         // its name is grafted on in the post-pass that folds skill loads.
@@ -263,6 +264,7 @@ function convertMessage(
               content: unescapeWithMathProtection(decodeHtmlEntities(content)),
               timestamp: msg.timestamp,
               images,
+              files,
               ...sharedMetadata,
             });
           }
