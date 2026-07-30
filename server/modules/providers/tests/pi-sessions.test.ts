@@ -431,6 +431,59 @@ test('normalizeMessage surfaces a failed turn as an error', () => {
 });
 
 /**
+ * Regression guard: rendered content must preserve whitespace byte-for-byte.
+ *
+ * `readOptionalString` trims and maps whitespace-only input to undefined, which
+ * is correct for identifiers and config but destructive for prose. Applied to
+ * streaming `text_delta`s it deleted the spaces between words and dropped
+ * space-only deltas entirely, so the transcript rendered as one run-together
+ * wall of text. Content paths use `readTextValue` instead.
+ */
+test('text deltas and content blocks preserve surrounding whitespace', async () => {
+  // A leading space is the separator between two words; losing it joins them.
+  const spaced = provider.normalizeMessage(
+    { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: ' bucket' } },
+    'sess-1',
+  );
+  assert.equal(spaced[0].content, ' bucket');
+
+  // A delta that is nothing but a space still carries meaning.
+  const spaceOnly = provider.normalizeMessage(
+    { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: ' ' } },
+    'sess-1',
+  );
+  assert.equal(spaceOnly.length, 1);
+  assert.equal(spaceOnly[0].content, ' ');
+
+  // Concatenating a delta sequence must reproduce the original text exactly.
+  const source = ['The', ' merge', ' writes', ' back', ' to', ' the', ' bucket.'];
+  const streamed = source
+    .flatMap((delta) => provider.normalizeMessage(
+      { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta } },
+      'sess-1',
+    ))
+    .map((message) => message.content)
+    .join('');
+  assert.equal(streamed, 'The merge writes back to the bucket.');
+
+  // History blocks keep their own whitespace, including indentation.
+  const indented = '    indented line\n\nnext paragraph\n';
+  const lines = [
+    header('/workspace'),
+    JSON.stringify({
+      type: 'message',
+      id: 'aaaa1111',
+      parentId: null,
+      message: { role: 'assistant', content: [{ type: 'text', text: indented }] },
+    }),
+  ];
+  await withPiSession(lines, 'sess-1', async () => {
+    const result = await provider.fetchHistory('sess-1');
+    assert.equal(result.messages[0].content, indented);
+  });
+});
+
+/**
  * Regression guard for a crash that took down the entire chat interface.
  *
  * The chat converter reads a tool result's **top-level** `content`; the message

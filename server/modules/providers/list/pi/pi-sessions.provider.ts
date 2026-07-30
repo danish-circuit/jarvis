@@ -18,6 +18,17 @@ import {
 const PROVIDER = 'pi';
 
 /**
+ * Reads a string that will be rendered, preserving whitespace exactly.
+ *
+ * Deliberately NOT `readOptionalString`, which trims and maps whitespace-only
+ * input to undefined. That is right for identifiers and config values and wrong
+ * for prose: applied to streaming `text_delta`s it deleted the spaces between
+ * words (and dropped space-only deltas outright), so the transcript rendered as
+ * one run-together wall of text.
+ */
+const readTextValue = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+/**
  * Renders a tool argument/result payload for display.
  */
 const formatToolContent = (value: unknown): string => {
@@ -55,9 +66,8 @@ const extractTextContent = (content: unknown): string => {
   return content
     .map((block) => {
       const record = readObjectRecord(block);
-      return record && record.type === 'text' ? readOptionalString(record.text) ?? '' : '';
+      return record && record.type === 'text' ? readTextValue(record.text) : '';
     })
-    .filter(Boolean)
     .join('');
 };
 
@@ -158,7 +168,7 @@ export class PiSessionsProvider implements IProviderSessions {
       // A turn that dies mid-block therefore shows no thinking live; it still
       // appears on reload, because the history path reads the persisted blocks.
       if (eventType === 'thinking_end') {
-        const thinking = readOptionalString(event?.content) ?? '';
+        const thinking = readTextValue(event?.content);
         return thinking.trim()
           ? [createNormalizedMessage({
             ...base,
@@ -171,7 +181,7 @@ export class PiSessionsProvider implements IProviderSessions {
 
       // Text stays delta-based: `stream_delta` is concatenated into the live
       // assistant bubble, so the user sees the reply as it is produced.
-      const delta = readOptionalString(event?.delta) ?? '';
+      const delta = readTextValue(event?.delta);
       if (!delta) {
         return [];
       }
@@ -397,7 +407,7 @@ export class PiSessionsProvider implements IProviderSessions {
       // Pi's `/bash` command records shell runs the user drove directly. They
       // are not model tool calls, but rendering them as one keeps the transcript
       // honest about what touched the workspace.
-      const command = readOptionalString(message.command) ?? '';
+      const command = readTextValue(message.command);
       const exitCode = typeof message.exitCode === 'number' ? message.exitCode : null;
       return [createNormalizedMessage({
         ...base,
@@ -407,7 +417,7 @@ export class PiSessionsProvider implements IProviderSessions {
         toolInput: { command },
         toolId: `${entryId}-bash`,
         toolResult: {
-          content: readOptionalString(message.output) ?? '',
+          content: readTextValue(message.output),
           isError: exitCode !== null && exitCode !== 0,
         },
       })];
@@ -462,7 +472,7 @@ export class PiSessionsProvider implements IProviderSessions {
       }
 
       if (blockType === 'text') {
-        const text = readOptionalString(record.text) ?? '';
+        const text = readTextValue(record.text);
         if (text.trim()) {
           messages.push(createNormalizedMessage({
             ...base,
@@ -476,7 +486,7 @@ export class PiSessionsProvider implements IProviderSessions {
       }
 
       if (blockType === 'thinking') {
-        const thinking = readOptionalString(record.thinking) ?? '';
+        const thinking = readTextValue(record.thinking);
         if (thinking.trim()) {
           messages.push(createNormalizedMessage({
             ...base,
