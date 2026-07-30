@@ -38,8 +38,8 @@ interface ChatMessagesPaneProps {
   setCursorModel: (model: string) => void;
   codexModel: string;
   setCodexModel: (model: string) => void;
-  opencodeModel: string;
-  setOpenCodeModel: (model: string) => void;
+  piModel: string;
+  setPiModel: (model: string) => void;
   providerModelCatalog: Partial<Record<LLMProvider, ProviderModelsDefinition>>;
   providerModelsLoading: boolean;
   tasksEnabled: boolean;
@@ -86,8 +86,8 @@ function ChatMessagesPane({
   setCursorModel,
   codexModel,
   setCodexModel,
-  opencodeModel,
-  setOpenCodeModel,
+  piModel,
+  setPiModel,
   providerModelCatalog,
   providerModelsLoading,
   tasksEnabled,
@@ -185,8 +185,8 @@ function ChatMessagesPane({
           setCursorModel={setCursorModel}
           codexModel={codexModel}
           setCodexModel={setCodexModel}
-          opencodeModel={opencodeModel}
-          setOpenCodeModel={setOpenCodeModel}
+          piModel={piModel}
+          setPiModel={setPiModel}
           providerModelCatalog={providerModelCatalog}
           providerModelsLoading={providerModelsLoading}
           tasksEnabled={tasksEnabled}

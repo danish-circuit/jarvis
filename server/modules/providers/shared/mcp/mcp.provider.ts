@@ -37,6 +37,10 @@ export abstract class McpProvider implements IProviderMcp {
     this.supportedTransports = supportedTransports;
   }
 
+  getSupportedScopes(): McpScope[] {
+    return [...this.supportedScopes];
+  }
+
   async listServers(options?: { workspacePath?: string }): Promise<Record<McpScope, ProviderMcpServer[]>> {
     const grouped: Record<McpScope, ProviderMcpServer[]> = {
       user: [],

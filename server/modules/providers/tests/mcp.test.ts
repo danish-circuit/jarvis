@@ -170,86 +170,36 @@ test('providerMcpService handles codex MCP TOML config and capability validation
 });
 
 /**
- * This test covers OpenCode MCP support for user/project config files, JSONC-compatible
- * reads, and validation for unsupported scope/transport combinations.
+ * Pi has no MCP support, so its facet declares zero scopes and transports. This
+ * pins that contract: listing yields nothing rather than throwing, and every
+ * write is rejected with a 400 instead of silently writing a config file Pi
+ * would never read.
  */
-test('providerMcpService handles opencode MCP config and capability validation', { concurrency: false }, async () => {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'llm-mcp-opencode-'));
+test('providerMcpService reports pi as having no MCP support', { concurrency: false }, async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'llm-mcp-pi-'));
   const workspacePath = path.join(tempRoot, 'workspace');
   await fs.mkdir(workspacePath, { recursive: true });
-  await fs.mkdir(path.join(tempRoot, '.config', 'opencode'), { recursive: true });
-  await fs.writeFile(
-    path.join(tempRoot, '.config', 'opencode', 'opencode.jsonc'),
-    `{
-      // Existing comments should not block OpenCode MCP reads.
-      "mcp": {}
-    }\n`,
-    'utf8',
-  );
 
   const restoreHomeDir = patchHomeDir(tempRoot);
   try {
-    await providerMcpService.upsertProviderMcpServer('opencode', {
-      name: 'opencode-user-stdio',
-      scope: 'user',
-      transport: 'stdio',
-      command: 'node',
-      args: ['server.js'],
-      env: { API_KEY: 'x' },
-    });
+    const grouped = await providerMcpService.listProviderMcpServers('pi', { workspacePath });
+    assert.deepEqual(grouped, { user: [], local: [], project: [] });
 
-    await providerMcpService.upsertProviderMcpServer('opencode', {
-      name: 'opencode-project-http',
-      scope: 'project',
-      transport: 'http',
-      url: 'https://opencode.example.com/mcp',
-      headers: { Authorization: 'Bearer token' },
-      workspacePath,
-    });
-
-    const userConfig = await readJson(path.join(tempRoot, '.config', 'opencode', 'opencode.jsonc'));
-    const userServers = userConfig.mcp as Record<string, unknown>;
-    const userStdio = userServers['opencode-user-stdio'] as Record<string, unknown>;
-    assert.equal(userStdio.type, 'local');
-    assert.deepEqual(userStdio.command, ['node', 'server.js']);
-    assert.deepEqual(userStdio.environment, { API_KEY: 'x' });
-
-    const projectConfig = await readJson(path.join(workspacePath, 'opencode.json'));
-    const projectServers = projectConfig.mcp as Record<string, unknown>;
-    const projectHttp = projectServers['opencode-project-http'] as Record<string, unknown>;
-    assert.equal(projectHttp.type, 'remote');
-    assert.equal(projectHttp.url, 'https://opencode.example.com/mcp');
-
-    const grouped = await providerMcpService.listProviderMcpServers('opencode', { workspacePath });
-    assert.ok(grouped.user.some((server) => server.name === 'opencode-user-stdio' && server.transport === 'stdio'));
-    assert.ok(grouped.project.some((server) => server.name === 'opencode-project-http' && server.transport === 'http'));
-
-    await assert.rejects(
-      providerMcpService.upsertProviderMcpServer('opencode', {
-        name: 'opencode-local',
-        scope: 'local',
-        transport: 'stdio',
-        command: 'node',
-      }),
-      (error: unknown) =>
-        error instanceof AppError &&
-        error.code === 'MCP_SCOPE_NOT_SUPPORTED' &&
-        error.statusCode === 400,
-    );
-
-    await assert.rejects(
-      providerMcpService.upsertProviderMcpServer('opencode', {
-        name: 'opencode-sse',
-        scope: 'project',
-        transport: 'sse',
-        url: 'https://example.com/sse',
-        workspacePath,
-      }),
-      (error: unknown) =>
-        error instanceof AppError &&
-        error.code === 'MCP_TRANSPORT_NOT_SUPPORTED' &&
-        error.statusCode === 400,
-    );
+    for (const scope of ['user', 'project', 'local'] as const) {
+      await assert.rejects(
+        providerMcpService.upsertProviderMcpServer('pi', {
+          name: 'pi-stdio',
+          scope,
+          transport: 'stdio',
+          command: 'node',
+          workspacePath,
+        }),
+        (error: unknown) =>
+          error instanceof AppError &&
+          error.code === 'MCP_SCOPE_NOT_SUPPORTED' &&
+          error.statusCode === 400,
+      );
+    }
   } finally {
     restoreHomeDir();
     await fs.rm(tempRoot, { recursive: true, force: true });
@@ -313,17 +263,17 @@ test('providerMcpService global adder writes to all providers and rejects unsupp
       workspacePath,
     });
 
-    assert.equal(globalResult.length, 4);
+    // Pi is skipped entirely: it supports no MCP scopes, so a global add
+    // touches only the three providers that can actually store the server.
+    assert.equal(globalResult.length, 3);
     assert.ok(globalResult.every((entry) => entry.created === true));
+    assert.ok(!globalResult.some((entry) => entry.provider === 'pi'));
 
     const claudeProject = await readJson(path.join(workspacePath, '.mcp.json'));
     assert.ok((claudeProject.mcpServers as Record<string, unknown>)['global-http']);
 
     const codexProject = TOML.parse(await fs.readFile(path.join(workspacePath, '.codex', 'config.toml'), 'utf8')) as Record<string, unknown>;
     assert.ok((codexProject.mcp_servers as Record<string, unknown>)['global-http']);
-
-    const opencodeProject = await readJson(path.join(workspacePath, 'opencode.json'));
-    assert.ok((opencodeProject.mcp as Record<string, unknown>)['global-http']);
 
     const cursorProject = await readJson(path.join(workspacePath, '.cursor', 'mcp.json'));
     assert.ok((cursorProject.mcpServers as Record<string, unknown>)['global-http']);

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { authenticatedFetch } from '../../../utils/api';
 import type { PendingPermissionRequest, PermissionMode } from '../types/types';
+import { LLM_PROVIDERS } from '../../../types/app';
 import type {
   ProjectSession,
   LLMProvider,
@@ -20,10 +21,10 @@ const FALLBACK_DEFAULT_MODEL: Record<LLMProvider, string> = {
   claude: 'default',
   cursor: 'gpt-5.3-codex',
   codex: 'gpt-5.4',
-  opencode: 'anthropic/claude-sonnet-4-5',
+  pi: 'anthropic/claude-sonnet-4-5',
 };
 
-const PROVIDERS: LLMProvider[] = ['claude', 'cursor', 'codex', 'opencode'];
+const PROVIDERS: LLMProvider[] = LLM_PROVIDERS;
 
 const readStoredProvider = (): LLMProvider => {
   const storedProvider = localStorage.getItem('selected-provider');
@@ -42,7 +43,9 @@ const FALLBACK_PERMISSION_MODES: Record<LLMProvider, PermissionMode[]> = {
   claude: ['default', 'auto', 'acceptEdits', 'bypassPermissions', 'plan'],
   cursor: ['default', 'acceptEdits', 'bypassPermissions', 'plan'],
   codex: ['default', 'acceptEdits', 'bypassPermissions'],
-  opencode: ['default', 'acceptEdits', 'bypassPermissions', 'plan'],
+  // Pi has no permission system; `plan` is emulated with a read-only tool
+  // allowlist, and there is no meaningful default/bypass distinction.
+  pi: ['default', 'plan'],
 };
 
 type ProviderCapabilities = {
@@ -106,8 +109,8 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
       return acc;
     }, {});
   });
-  const [opencodeModel, setOpenCodeModel] = useState<string>(() => {
-    return localStorage.getItem('opencode-model') || FALLBACK_DEFAULT_MODEL.opencode;
+  const [piModel, setPiModel] = useState<string>(() => {
+    return localStorage.getItem('pi-model') || FALLBACK_DEFAULT_MODEL.pi;
   });
 
   /**
@@ -151,8 +154,8 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
       return;
     }
 
-    setOpenCodeModel(model);
-    localStorage.setItem('opencode-model', model);
+    setPiModel(model);
+    localStorage.setItem('pi-model', model);
   }, []);
 
   const setStoredProviderEffort = useCallback((targetProvider: LLMProvider, effort: string) => {
@@ -354,8 +357,8 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
     claude: claudeModel,
     cursor: cursorModel,
     codex: codexModel,
-    opencode: opencodeModel,
-  }), [claudeModel, cursorModel, codexModel, opencodeModel]);
+    pi: piModel,
+  }), [claudeModel, cursorModel, codexModel, piModel]);
 
   useEffect(() => {
     const claude = providerModelCatalog.claude;
@@ -397,17 +400,17 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
   }, [providerModelCatalog.codex, codexModel]);
 
   useEffect(() => {
-    const opencode = providerModelCatalog.opencode;
-    if (opencode) {
-      const next = pickStoredOrCurrent('opencode-model', opencodeModel, opencode);
-      if (next !== opencodeModel) {
-        setOpenCodeModel(next);
+    const pi = providerModelCatalog.pi;
+    if (pi) {
+      const next = pickStoredOrCurrent('pi-model', piModel, pi);
+      if (next !== piModel) {
+        setPiModel(next);
       }
-      if (localStorage.getItem('opencode-model') !== next) {
-        localStorage.setItem('opencode-model', next);
+      if (localStorage.getItem('pi-model') !== next) {
+        localStorage.setItem('pi-model', next);
       }
     }
-  }, [providerModelCatalog.opencode, opencodeModel]);
+  }, [providerModelCatalog.pi, piModel]);
 
   useEffect(() => {
     const nextEfforts: Partial<Record<LLMProvider, string>> = {};
@@ -569,8 +572,8 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
     setCodexModel,
     currentProviderEffort,
     currentProviderEffortOptions,
-    opencodeModel,
-    setOpenCodeModel,
+    piModel,
+    setPiModel,
     permissionMode,
     setPermissionMode,
     pendingPermissionRequests,

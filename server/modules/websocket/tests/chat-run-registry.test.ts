@@ -224,22 +224,22 @@ test('replayEvents returns only events after the requested seq', async () => {
 
 test('attachConnection reroutes the live stream to a new socket', async () => {
   await withIsolatedDatabase(() => {
-    sessionsDb.createAppSession('app-run-5', 'opencode', '/workspace/demo');
+    sessionsDb.createAppSession('app-run-5', 'pi', '/workspace/demo');
     const firstConnection = new FakeConnection();
     const run = chatRunRegistry.startRun({
       appSessionId: 'app-run-5',
-      provider: 'opencode',
+      provider: 'pi',
       providerSessionId: null,
       connection: firstConnection,
       userId: null,
     });
     assert.ok(run);
 
-    run.writer.send({ kind: 'stream_delta', provider: 'opencode', sessionId: 'o', content: 'before' });
+    run.writer.send({ kind: 'stream_delta', provider: 'pi', sessionId: 'o', content: 'before' });
 
     const secondConnection = new FakeConnection();
     assert.equal(chatRunRegistry.attachConnection('app-run-5', secondConnection), true);
-    run.writer.send({ kind: 'stream_delta', provider: 'opencode', sessionId: 'o', content: 'after' });
+    run.writer.send({ kind: 'stream_delta', provider: 'pi', sessionId: 'o', content: 'after' });
 
     assert.deepEqual(firstConnection.frames.map((frame) => frame.content), ['before']);
     assert.deepEqual(secondConnection.frames.map((frame) => frame.content), ['after']);
@@ -248,11 +248,11 @@ test('attachConnection reroutes the live stream to a new socket', async () => {
 
 test('startRun rejects a second concurrent run for the same session', async () => {
   await withIsolatedDatabase(() => {
-    sessionsDb.createAppSession('app-run-6', 'opencode', '/workspace/demo');
+    sessionsDb.createAppSession('app-run-6', 'pi', '/workspace/demo');
     const connection = new FakeConnection();
     const first = chatRunRegistry.startRun({
       appSessionId: 'app-run-6',
-      provider: 'opencode',
+      provider: 'pi',
       providerSessionId: null,
       connection,
       userId: null,
@@ -261,7 +261,7 @@ test('startRun rejects a second concurrent run for the same session', async () =
 
     const second = chatRunRegistry.startRun({
       appSessionId: 'app-run-6',
-      provider: 'opencode',
+      provider: 'pi',
       providerSessionId: null,
       connection,
       userId: null,
@@ -272,7 +272,7 @@ test('startRun rejects a second concurrent run for the same session', async () =
     chatRunRegistry.completeRun('app-run-6', { exitCode: 0 });
     const third = chatRunRegistry.startRun({
       appSessionId: 'app-run-6',
-      provider: 'opencode',
+      provider: 'pi',
       providerSessionId: null,
       connection,
       userId: null,

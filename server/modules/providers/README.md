@@ -36,7 +36,7 @@ Current provider ids in this repo are:
 - `claude`
 - `codex`
 - `cursor`
-- `opencode`
+- `pi`
 
 Those ids are mirrored in backend unions and frontend provider constants. If
 adding a new provider, update every place that hardcodes this list.
@@ -55,7 +55,7 @@ server/modules/providers/list/<provider>/
   <provider>-session-synchronizer.provider.ts
 ```
 
-The existing provider folders are `claude`, `codex`, `cursor`, and `opencode`.
+The existing provider folders are `claude`, `codex`, `cursor`, and `pi`.
 
 ## What Each Facet Does
 
@@ -121,7 +121,14 @@ Current MCP formats in this repo are:
 | Claude | `.mcp.json` in user / local / project locations | `user`, `local`, `project` | `stdio`, `http`, `sse` |
 | Codex | `.codex/config.toml` | `user`, `project` | `stdio`, `http` |
 | Cursor | `.cursor/mcp.json` | `user`, `project` | `stdio`, `http` |
-| OpenCode | `~/.config/opencode/opencode.json` or `<workspace>/opencode.json` (`.jsonc` is read when present) | `user`, `project` | `stdio`, `http` |
+| Pi | none | none | none |
+
+Pi has no MCP support at all, so `PiMcpProvider` passes empty scope/transport
+lists to `super(...)`. The shared base then degrades correctly on its own:
+`listServers` returns an all-empty record and writes reject with
+`MCP_SCOPE_NOT_SUPPORTED`. Use `mcp.getSupportedScopes()` to detect this — the
+global add/remove fan-out in `mcp.service.ts` skips such providers rather than
+collecting a guaranteed failure.
 
 5. Implement skills.
 
@@ -141,7 +148,7 @@ Current skill discovery roots are:
 | Claude | `~/.claude/skills` | `<workspace>/.claude/skills` | `/` | Also discovers Claude plugin skills from enabled plugin installs. Command skills live under `commands/`; markdown skills live under `skills/` and are scanned recursively. |
 | Codex | `~/.agents/skills`, `~/.codex/skills/.system`, `/etc/codex/skills` | `<workspace>/.agents/skills`, `path.dirname(workspacePath)/.agents/skills`, topmost git root `.agents/skills` | `$` | Overlapping roots are deduplicated before scanning. |
 | Cursor | `~/.cursor/skills` | `<workspace>/.cursor/skills`, `<workspace>/.agents/skills` | `/` | Uses slash-style commands. |
-| OpenCode | `~/.config/opencode/skills`, `~/.claude/skills`, `~/.agents/skills` | Cwd-to-topmost-git-root `.opencode/skills`, `.claude/skills`, and `.agents/skills` | `/` | Reuses OpenCode, Claude, and Agents skill locations. Overlapping roots are deduplicated before scanning. |
+| Pi | `~/.pi/agent/skills` (honors `PI_CODING_AGENT_DIR`), `~/.agents/skills` | Cwd-to-topmost-git-root `.pi/skills` and `.agents/skills` | n/a | Uses `commandForSkill` rather than `commandPrefix` because Pi's command form is `/skill:<name>`. Overlapping roots are deduplicated before scanning. |
 
 Command forms currently used by the providers are:
 
@@ -149,7 +156,7 @@ Command forms currently used by the providers are:
 - Claude plugin skills: `/plugin-name:skill-name`
 - Codex skills: `$skill-name`
 - Cursor skills: `/skill-name`
-- OpenCode skills: `/skill-name`
+- Pi skills: `/skill:skill-name`
 
 6. Implement sessions.
 
@@ -163,6 +170,10 @@ Command forms currently used by the providers are:
   - always return `total`, `hasMore`, `offset`, and `limit` when paginating.
 - Sanitize any filesystem-derived ids before using them in file or database paths.
 - Do not assume a provider's history format matches another provider's format.
+- Do not assume history is a flat append-only log. Pi stores sessions as a
+  *tree* (`id`/`parentId` per entry), so `fetchHistory` must resolve the active
+  leaf-to-root branch before mapping, or abandoned `/fork` branches leak into
+  the transcript. See `buildPiActiveBranch` in `list/pi/pi-session-file.ts`.
 
 7. Implement session synchronization.
 
@@ -186,7 +197,7 @@ Current session sync roots are:
 | Claude | `~/.claude/projects/**/*.jsonl` | Uses `~/.claude/history.jsonl` for name lookup and the trailing `ai-title`, `last-prompt`, or `custom-title` entries for title recovery. |
 | Codex | `~/.codex/sessions/**/*.jsonl` | Uses `~/.codex/session_index.jsonl` for title lookup and the last `task_complete` message for a fallback title. |
 | Cursor | `~/.cursor/projects/**/*.jsonl` | Uses sibling `worker.log` to recover `workspacePath`, then derives the session title from the first user prompt. |
-| OpenCode | `~/.local/share/opencode/opencode.db` | Reads active sessions/messages/parts from OpenCode's shared SQLite database and stores `jsonl_path` as `null` so deleting one app session cannot remove the shared DB. |
+| Pi | `~/.pi/agent/sessions/**/*.jsonl` (honors `PI_CODING_AGENT_SESSION_DIR`) | One file per session, named `<timestamp>_<sessionId>.jsonl` under a per-cwd folder. Reads `cwd` from the header line rather than decoding the folder name, which is lossy. Titles from a `session_info` entry, else the first user message. |
 
 8. Register the provider.
 
@@ -325,7 +336,7 @@ Useful tests in this repo:
 
 - `server/modules/providers/tests/mcp.test.ts`
 - `server/modules/providers/tests/skills.test.ts`
-- `server/modules/providers/tests/opencode-sessions.test.ts`
+- `server/modules/providers/tests/pi-sessions.test.ts`
 
 If you touch sessions or session synchronization, add or update focused tests
 alongside the implementation.

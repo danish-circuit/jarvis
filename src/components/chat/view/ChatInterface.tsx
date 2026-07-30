@@ -71,8 +71,8 @@ function ChatInterface({
     setCodexModel,
     currentProviderEffort,
     currentProviderEffortOptions,
-    opencodeModel,
-    setOpenCodeModel,
+    piModel,
+    setPiModel,
     permissionMode,
     pendingPermissionRequests,
     setPendingPermissionRequests,
@@ -202,7 +202,7 @@ function ChatInterface({
     claudeModel,
     codexModel,
     currentProviderEffort,
-    opencodeModel,
+    piModel,
     isLoading: isProcessing,
     canAbortSession,
     tokenBudget,
@@ -297,8 +297,8 @@ function ChatInterface({
         ? t('messageTypes.cursor')
         : provider === 'codex'
           ? t('messageTypes.codex')
-          : provider === 'opencode'
-              ? t('messageTypes.opencode', { defaultValue: 'OpenCode' })
+          : provider === 'pi'
+              ? t('messageTypes.pi', { defaultValue: 'Pi' })
             : t('messageTypes.claude');
 
     return (
@@ -337,8 +337,8 @@ function ChatInterface({
           setCursorModel={setCursorModel}
           codexModel={codexModel}
           setCodexModel={setCodexModel}
-          opencodeModel={opencodeModel}
-          setOpenCodeModel={setOpenCodeModel}
+          piModel={piModel}
+          setPiModel={setPiModel}
           providerModelCatalog={providerModelCatalog}
           providerModelsLoading={providerModelsLoading}
           tasksEnabled={tasksEnabled}
@@ -444,8 +444,8 @@ function ChatInterface({
                 ? t('messageTypes.cursor')
                 : provider === 'codex'
                   ? t('messageTypes.codex')
-                  : provider === 'opencode'
-                      ? t('messageTypes.opencode', { defaultValue: 'OpenCode' })
+                  : provider === 'pi'
+                      ? t('messageTypes.pi', { defaultValue: 'Pi' })
                     : t('messageTypes.claude'),
           })}
           isTextareaExpanded={isTextareaExpanded}

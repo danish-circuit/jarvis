@@ -4,6 +4,8 @@ import { McpServers } from '../../../../../mcp';
 import type { SkillsProject } from '../../../../../skills/types';
 import { ProviderSkills } from '../../../../../skills';
 
+import { isAgentCategoryVisible } from '../agentCategories';
+
 import AccountContent from './content/AccountContent';
 import PermissionsContent from './content/PermissionsContent';
 
@@ -73,7 +75,7 @@ export default function AgentCategoryContentSection({
         />
       )}
 
-      {selectedCategory === 'mcp' && (
+      {selectedCategory === 'mcp' && isAgentCategoryVisible(selectedAgent, 'mcp') && (
         // SettingsProject.name is populated from the DB projectId by
         // normalizeProjectForSettings, so we can map it straight through.
         <McpServers
@@ -87,7 +89,7 @@ export default function AgentCategoryContentSection({
         />
       )}
 
-      {selectedCategory === 'skills' && selectedAgent !== 'opencode' && (
+      {selectedCategory === 'skills' && isAgentCategoryVisible(selectedAgent, 'skills') && (
         <ProviderSkills
           selectedProvider={selectedAgent}
           currentProjects={projects.map<SkillsProject>((project) => ({

@@ -378,11 +378,12 @@ test('providerSkillsService lists codex repository, user, and system skills', { 
 });
 
 /**
- * This test covers OpenCode skill lookup across cwd-to-git-root project folders
- * plus the global OpenCode/Claude/Agents compatibility locations.
+ * This test covers Pi skill lookup across cwd-to-git-root project folders plus
+ * the user-scoped agent dir and the shared `.agents` location, and pins the
+ * `/skill:<name>` command form Pi uses instead of the bare `/<name>` prefix.
  */
-test('providerSkillsService lists opencode project and user compatibility skills', { concurrency: false }, async () => {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'llm-skills-opencode-'));
+test('providerSkillsService lists pi project and user skills', { concurrency: false }, async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'llm-skills-pi-'));
   const repoRoot = path.join(tempRoot, 'repo');
   const workspacePath = path.join(repoRoot, 'packages', 'app');
   await fs.mkdir(path.join(repoRoot, '.git'), { recursive: true });
@@ -391,52 +392,38 @@ test('providerSkillsService lists opencode project and user compatibility skills
   const restoreHomeDir = patchHomeDir(tempRoot);
   try {
     await writeSkill(
-      path.join(workspacePath, '.opencode', 'skills'),
-      'opencode-cwd-dir',
-      'opencode-cwd',
-      'OpenCode cwd skill',
-    );
-    await writeSkill(
-      path.join(repoRoot, 'packages', '.claude', 'skills'),
-      'opencode-claude-parent-dir',
-      'opencode-claude-parent',
-      'OpenCode Claude parent skill',
+      path.join(workspacePath, '.pi', 'skills'),
+      'pi-cwd-dir',
+      'pi-cwd',
+      'Pi cwd skill',
     );
     await writeSkill(
       path.join(repoRoot, '.agents', 'skills'),
-      'opencode-agents-root-dir',
-      'opencode-agents-root',
-      'OpenCode Agents root skill',
+      'pi-agents-root-dir',
+      'pi-agents-root',
+      'Pi Agents root skill',
     );
     await writeSkill(
-      path.join(tempRoot, '.config', 'opencode', 'skills'),
-      'opencode-user-dir',
-      'opencode-user',
-      'OpenCode user skill',
-    );
-    await writeSkill(
-      path.join(tempRoot, '.claude', 'skills'),
-      'opencode-claude-user-dir',
-      'opencode-claude-user',
-      'OpenCode Claude user skill',
+      path.join(tempRoot, '.pi', 'agent', 'skills'),
+      'pi-user-dir',
+      'pi-user',
+      'Pi user skill',
     );
     await writeSkill(
       path.join(tempRoot, '.agents', 'skills'),
-      'opencode-agents-user-dir',
-      'opencode-agents-user',
-      'OpenCode Agents user skill',
+      'pi-agents-user-dir',
+      'pi-agents-user',
+      'Pi Agents user skill',
     );
 
-    const skills = await providerSkillsService.listProviderSkills('opencode', { workspacePath });
+    const skills = await providerSkillsService.listProviderSkills('pi', { workspacePath });
     const byName = new Map(skills.map((skill) => [skill.name, skill]));
 
-    assert.equal(byName.get('opencode-cwd')?.scope, 'project');
-    assert.equal(byName.get('opencode-claude-parent')?.scope, 'project');
-    assert.equal(byName.get('opencode-agents-root')?.scope, 'project');
-    assert.equal(byName.get('opencode-user')?.scope, 'user');
-    assert.equal(byName.get('opencode-claude-user')?.scope, 'user');
-    assert.equal(byName.get('opencode-agents-user')?.scope, 'user');
-    assert.equal(byName.get('opencode-cwd')?.command, '/opencode-cwd');
+    assert.equal(byName.get('pi-cwd')?.scope, 'project');
+    assert.equal(byName.get('pi-agents-root')?.scope, 'project');
+    assert.equal(byName.get('pi-user')?.scope, 'user');
+    assert.equal(byName.get('pi-agents-user')?.scope, 'user');
+    assert.equal(byName.get('pi-cwd')?.command, '/skill:pi-cwd');
   } finally {
     restoreHomeDir();
     await fs.rm(tempRoot, { recursive: true, force: true });
@@ -660,26 +647,37 @@ test('providerSkillsService adds global skills for claude, codex, and cursor', {
 });
 
 /**
- * OpenCode reuses other providers' skill folders, so it should not accept
- * direct skill writes through the managed provider endpoint.
+ * Pi owns a writable user skills folder (`~/.pi/agent/skills`), so unlike the
+ * OpenCode provider it replaced, managed install/remove must actually work.
  */
-test('providerSkillsService rejects managed skill creation for opencode', { concurrency: false }, async () => {
-  await assert.rejects(
-    providerSkillsService.addProviderSkills('opencode', {
+test('providerSkillsService installs and removes managed pi skills', { concurrency: false }, async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'llm-skills-pi-managed-'));
+
+  const restoreHomeDir = patchHomeDir(tempRoot);
+  try {
+    const installed = await providerSkillsService.addProviderSkills('pi', {
       entries: [
         {
-          directoryName: 'opencode-global-dir',
-          content: '---\nname: opencode-global\ndescription: Unsupported skill\n---\n\nOpenCode body.\n',
+          directoryName: 'pi-global-dir',
+          content: '---\nname: pi-global\ndescription: Managed skill\n---\n\nPi body.\n',
         },
       ],
-    }),
-    /does not support managed global skills/i,
-  );
+    });
 
-  await assert.rejects(
-    providerSkillsService.removeProviderSkill('opencode', {
-      directoryName: 'opencode-global-dir',
-    }),
-    /does not support managed global skills/i,
-  );
+    assert.equal(installed.length, 1);
+    assert.equal(installed[0].name, 'pi-global');
+    assert.equal(installed[0].command, '/skill:pi-global');
+
+    const skillPath = path.join(tempRoot, '.pi', 'agent', 'skills', 'pi-global-dir', 'SKILL.md');
+    assert.ok((await fs.readFile(skillPath, 'utf8')).includes('Pi body.'));
+
+    const removal = await providerSkillsService.removeProviderSkill('pi', {
+      directoryName: 'pi-global-dir',
+    });
+    assert.equal(removal.removed, true);
+    await assert.rejects(fs.access(skillPath));
+  } finally {
+    restoreHomeDir();
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  }
 });

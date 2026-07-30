@@ -146,11 +146,11 @@ function buildShellCommand(
     return 'codex';
   }
 
-  if (provider === 'opencode') {
+  if (provider === 'pi') {
     if (resumeSessionId) {
-      return `opencode --session "${resumeSessionId}"`;
+      return `pi --session "${resumeSessionId}"`;
     }
-    return initialCommand || 'opencode';
+    return initialCommand || 'pi';
   }
 
   const command = initialCommand || 'claude';
@@ -469,8 +469,8 @@ export function handleShellConnection(
               ? 'Cursor'
               : provider === 'codex'
                 ? 'Codex'
-                : provider === 'opencode'
-                    ? 'OpenCode'
+                : provider === 'pi'
+                    ? 'Pi'
                   : 'Claude';
           welcomeMsg = hasSession && resumeSessionId
             ? `\x1b[36mResuming ${providerName} session ${resumeSessionId} in: ${projectPath}\x1b[0m\r\n`

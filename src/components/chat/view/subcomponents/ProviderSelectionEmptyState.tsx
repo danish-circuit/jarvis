@@ -27,7 +27,7 @@ const PROVIDER_META: { id: LLMProvider; name: string }[] = [
   { id: "claude", name: "Anthropic" },
   { id: "codex", name: "OpenAI" },
   { id: "cursor", name: "Cursor" },
-  { id: "opencode", name: "OpenCode" },
+  { id: "pi", name: "Pi" },
 ];
 
 const MOD_KEY =
@@ -56,8 +56,8 @@ type ProviderSelectionEmptyStateProps = {
   setCursorModel: (model: string) => void;
   codexModel: string;
   setCodexModel: (model: string) => void;
-  opencodeModel: string;
-  setOpenCodeModel: (model: string) => void;
+  piModel: string;
+  setPiModel: (model: string) => void;
   providerModelCatalog: Partial<Record<LLMProvider, ProviderModelsDefinition>>;
   providerModelsLoading: boolean;
   tasksEnabled: boolean;
@@ -89,7 +89,7 @@ function getCurrentModel(
 ) {
   if (p === "claude") return c;
   if (p === "codex") return co;
-  if (p === "opencode") return o;
+  if (p === "pi") return o;
   return cu;
 }
 
@@ -97,7 +97,7 @@ function getProviderDisplayName(p: LLMProvider) {
   if (p === "claude") return "Claude";
   if (p === "cursor") return "Cursor";
   if (p === "codex") return "Codex";
-  if (p === "opencode") return "OpenCode";
+  if (p === "pi") return "Pi";
   return "Claude";
 }
 
@@ -113,8 +113,8 @@ export default function ProviderSelectionEmptyState({
   setCursorModel,
   codexModel,
   setCodexModel,
-  opencodeModel,
-  setOpenCodeModel,
+  piModel,
+  setPiModel,
   providerModelCatalog,
   providerModelsLoading,
   tasksEnabled,
@@ -142,7 +142,7 @@ export default function ProviderSelectionEmptyState({
     claudeModel,
     cursorModel,
     codexModel,
-    opencodeModel,
+    piModel,
   );
 
   const currentModelLabel = useMemo(() => {
@@ -161,15 +161,15 @@ export default function ProviderSelectionEmptyState({
       } else if (providerId === "codex") {
         setCodexModel(modelValue);
         localStorage.setItem("codex-model", modelValue);
-      } else if (providerId === "opencode") {
-        setOpenCodeModel(modelValue);
-        localStorage.setItem("opencode-model", modelValue);
+      } else if (providerId === "pi") {
+        setPiModel(modelValue);
+        localStorage.setItem("pi-model", modelValue);
       } else {
         setCursorModel(modelValue);
         localStorage.setItem("cursor-model", modelValue);
       }
     },
-    [setClaudeModel, setCursorModel, setCodexModel, setOpenCodeModel],
+    [setClaudeModel, setCursorModel, setCodexModel, setPiModel],
   );
 
   const handleModelSelect = useCallback(
@@ -312,9 +312,9 @@ export default function ProviderSelectionEmptyState({
                 codex: t("providerSelection.readyPrompt.codex", {
                   model: codexModel,
                 }),
-                opencode: t("providerSelection.readyPrompt.opencode", {
-                  model: opencodeModel,
-                  defaultValue: "Ready with OpenCode {{model}}",
+                pi: t("providerSelection.readyPrompt.pi", {
+                  model: piModel,
+                  defaultValue: "Ready with Pi {{model}}",
                 }),
               }[provider]
             }

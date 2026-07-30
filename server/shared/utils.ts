@@ -827,7 +827,7 @@ async function hasGitMarker(dirPath: string): Promise<boolean> {
 /**
  * Finds the highest git worktree root visible from a starting directory.
  *
- * Provider skill systems such as Codex and OpenCode walk upward through parent
+ * Provider skill systems such as Codex and Pi walk upward through parent
  * folders when resolving repository/project skills. Use this helper when a
  * provider needs the topmost `.git` marker instead of only the nearest one, so
  * monorepos and nested package folders discover shared root-level skills once.
@@ -1053,41 +1053,72 @@ export function readJsonRecord(value: unknown): AnyRecord | null {
 }
 
 // ---------------------------
-//----------------- OPENCODE SESSION STORAGE UTILITIES ------------
+//----------------- PI SESSION STORAGE UTILITIES ------------
 /**
- * Resolves the OpenCode SQLite session database path.
+ * Resolves Pi's agent configuration directory.
  *
- * OpenCode stores session, message, part, and project metadata in one shared
- * `opencode.db` file under its XDG data directory. Provider readers and
- * synchronizers should use this path for read-only access and should never store
- * it as a deletable transcript path for an individual app session row.
+ * Pi keeps `auth.json`, `models.json`, `models-store.json`, `settings.json` and
+ * the `sessions/` tree under one agent directory, `~/.pi/agent` by default. The
+ * CLI honors `PI_CODING_AGENT_DIR` as an override, so anything reading Pi state
+ * out-of-band must honor it too or it will silently read the wrong profile.
  */
-export function getOpenCodeDatabasePath(): string {
-  return path.join(os.homedir(), '.local', 'share', 'opencode', 'opencode.db');
+export function getPiAgentDir(): string {
+  const override = process.env.PI_CODING_AGENT_DIR?.trim();
+  if (override) {
+    return path.resolve(override.startsWith('~') ? path.join(os.homedir(), override.slice(1)) : override);
+  }
+
+  return path.join(os.homedir(), '.pi', 'agent');
 }
 
 /**
- * Decodes an OpenCode text payload that was persisted as a JSON string literal.
+ * Resolves the root directory holding Pi's session transcripts.
  *
- * OpenCode can store the first user prompt (and other text parts) as `"hello"`
- * instead of `hello`. Used by both the OpenCode session reader (transcript
- * history) and the OpenCode synchronizer (session titling) so a session name or
- * message body never surfaces with surrounding quote characters. Only fully
- * quoted, valid JSON string literals are unwrapped; ordinary prose that merely
- * happens to start/end with a quote is returned untouched.
+ * `PI_CODING_AGENT_SESSION_DIR` overrides the location independently of the
+ * agent directory (it is the env form of the CLI's `--session-dir`).
  */
-export function unwrapJsonStringLiteral(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed.startsWith('"') || !trimmed.endsWith('"')) {
-    return value;
+export function getPiSessionsDir(): string {
+  const override = process.env.PI_CODING_AGENT_SESSION_DIR?.trim();
+  if (override) {
+    return path.resolve(override.startsWith('~') ? path.join(os.homedir(), override.slice(1)) : override);
   }
 
-  try {
-    const parsed = JSON.parse(trimmed);
-    return typeof parsed === 'string' ? parsed : value;
-  } catch {
-    return value;
+  return path.join(getPiAgentDir(), 'sessions');
+}
+
+/**
+ * Encodes a workspace path into Pi's per-cwd session folder name.
+ *
+ * Mirrors `getDefaultSessionDirPath` in Pi's `core/session-manager.js`: strip the
+ * leading separator, replace every separator and drive colon with a hyphen, then
+ * wrap in double hyphens. Kept in sync by
+ * `server/modules/providers/tests/pi-sessions.test.ts`.
+ */
+export function encodePiSessionDirName(cwd: string): string {
+  const resolved = path.resolve(cwd);
+  return `--${resolved.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`;
+}
+
+/**
+ * Extracts the Pi session id from a transcript filename.
+ *
+ * Pi names transcripts `<fileTimestamp>_<sessionId>.jsonl`, so the id is the
+ * segment after the first underscore. Returns null for anything that does not
+ * match, which keeps malformed files out of the session index.
+ */
+export function readPiSessionIdFromFilename(filePath: string): string | null {
+  const base = path.basename(filePath);
+  if (!base.endsWith('.jsonl')) {
+    return null;
   }
+
+  const separatorIndex = base.indexOf('_');
+  if (separatorIndex < 0) {
+    return null;
+  }
+
+  const sessionId = base.slice(separatorIndex + 1, -'.jsonl'.length).trim();
+  return sessionId || null;
 }
 
 // ---------------------------
@@ -1267,7 +1298,7 @@ export async function extractFirstValidJsonlData<T>(
 //----------------- CLI PROMPT ARGUMENT UTILITIES ------------
 /**
  * Makes a prompt safe to pass as one CLI argument to `.cmd`-shimmed tools on
- * Windows (cursor-agent and opencode installed via npm-style shims).
+ * Windows (cursor-agent installed via an npm-style shim).
  *
  * cmd.exe cannot carry newlines inside an argument: everything after the
  * first newline is silently dropped before the target CLI ever sees it, which
@@ -1275,7 +1306,7 @@ export async function extractFirstValidJsonlData<T>(
  * Collapsing newline runs to single spaces loses formatting but never loses
  * content, so runtimes should call this on win32 right before spawning.
  *
- * Used by the cursor and opencode spawn runtimes.
+ * Used by the cursor spawn runtime.
  */
 export function flattenPromptForWindowsShell(prompt: string): string {
   if (process.platform !== 'win32' || typeof prompt !== 'string') {

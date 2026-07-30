@@ -9,7 +9,7 @@ import { userDb, apiKeysDb, githubTokensDb, projectsDb } from '../modules/databa
 import { queryClaudeSDK } from '../claude-sdk.js';
 import { spawnCursor } from '../cursor-cli.js';
 import { queryCodex } from '../openai-codex.js';
-import { spawnOpenCode } from '../opencode-cli.js';
+import { spawnPi } from '../pi-cli.js';
 import { Octokit } from '@octokit/rest';
 import { providerModelsService } from '../modules/providers/services/provider-models.service.js';
 import { IS_PLATFORM } from '../constants/config.js';
@@ -636,7 +636,7 @@ class ResponseCollector {
  *                          - Source for auto-generated branch names (if createBranch=true and no branchName)
  *                          - Fallback for PR title if no commits are made
  *
- * @param {string} provider - (Optional) AI provider to use. Options: 'claude' | 'cursor' | 'codex' | 'opencode'
+ * @param {string} provider - (Optional) AI provider to use. Options: 'claude' | 'cursor' | 'codex' | 'pi'
  *                           Default: 'claude'
  *
  * @param {boolean} stream - (Optional) Enable Server-Sent Events (SSE) streaming for real-time updates.
@@ -759,7 +759,7 @@ class ResponseCollector {
  * Input Validations (400 Bad Request):
  *   - Either githubUrl OR projectPath must be provided (not neither)
  *   - message must be non-empty string
- *   - provider must be 'claude', 'cursor', 'codex', or 'opencode'
+ *   - provider must be 'claude', 'cursor', 'codex', or 'pi'
  *   - createBranch/createPR requires githubUrl OR projectPath (not neither)
  *   - branchName must pass Git naming rules (if provided)
  *
@@ -870,8 +870,8 @@ router.post('/', validateExternalApiKey, async (req, res) => {
     return res.status(400).json({ error: 'message is required' });
   }
 
-  if (!['claude', 'cursor', 'codex', 'opencode'].includes(provider)) {
-    return res.status(400).json({ error: 'provider must be "claude", "cursor", "codex", or "opencode"' });
+  if (!['claude', 'cursor', 'codex', 'pi'].includes(provider)) {
+    return res.status(400).json({ error: 'provider must be "claude", "cursor", "codex", or "pi"' });
   }
 
   // Validate GitHub branch/PR creation requirements
@@ -950,7 +950,7 @@ router.post('/', validateExternalApiKey, async (req, res) => {
     }
 
     const codexModels = (await providerModelsService.getProviderModels('codex')).models;
-    const opencodeModels = (await providerModelsService.getProviderModels('opencode')).models;
+    const piModels = (await providerModelsService.getProviderModels('pi')).models;
 
     // Start the appropriate session
     if (provider === 'claude') {
@@ -986,16 +986,18 @@ router.post('/', validateExternalApiKey, async (req, res) => {
         effort,
         permissionMode: 'bypassPermissions'
       }, writer);
-    } else if (provider === 'opencode') {
-      console.log('Starting OpenCode CLI session');
+    } else if (provider === 'pi') {
+      console.log('Starting Pi CLI session');
 
-      await spawnOpenCode(message.trim(), {
+      await spawnPi(message.trim(), {
         projectPath: finalProjectPath,
         cwd: finalProjectPath,
         sessionId: sessionId || null,
-        model: model || opencodeModels.DEFAULT,
+        model: model || piModels.DEFAULT,
         effort,
-        permissionMode: 'bypassPermissions' // Agent runs are non-interactive, like the other providers above
+        // Pi has no permission gating, so this is the default mode for it; the
+        // name is kept for parity with the other providers above.
+        permissionMode: 'bypassPermissions'
       }, writer);
     }
 

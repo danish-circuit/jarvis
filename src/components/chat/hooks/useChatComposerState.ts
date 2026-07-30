@@ -46,7 +46,7 @@ interface UseChatComposerStateArgs {
   claudeModel: string;
   codexModel: string;
   currentProviderEffort: string;
-  opencodeModel: string;
+  piModel: string;
   isLoading: boolean;
   canAbortSession: boolean;
   tokenBudget: Record<string, unknown> | null;
@@ -198,7 +198,7 @@ export function useChatComposerState({
   claudeModel,
   codexModel,
   currentProviderEffort,
-  opencodeModel,
+  piModel,
   isLoading,
   canAbortSession,
   tokenBudget,
@@ -379,8 +379,8 @@ export function useChatComposerState({
             ? cursorModel
             : provider === 'codex'
               ? codexModel
-              : provider === 'opencode'
-                  ? opencodeModel
+              : provider === 'pi'
+                  ? piModel
                   : claudeModel,
           tokenUsage: tokenBudget,
         };
@@ -434,7 +434,7 @@ export function useChatComposerState({
       codexModel,
       currentSessionId,
       cursorModel,
-      opencodeModel,
+      piModel,
       handleBuiltInCommand,
       handleCustomCommand,
       input,
@@ -601,8 +601,8 @@ export function useChatComposerState({
             ? 'cursor-tools-settings'
             : provider === 'codex'
               ? 'codex-settings'
-              : provider === 'opencode'
-                  ? 'opencode-settings'
+              : provider === 'pi'
+                  ? 'pi-settings'
                 : 'claude-settings';
         const savedSettings = safeLocalStorage.getItem(settingsKey);
         if (savedSettings) {
@@ -625,8 +625,8 @@ export function useChatComposerState({
         ? cursorModel
         : provider === 'codex'
           ? codexModel
-          : provider === 'opencode'
-            ? opencodeModel
+          : provider === 'pi'
+            ? piModel
             : claudeModel;
 
     return {
@@ -642,7 +642,7 @@ export function useChatComposerState({
     codexModel,
     currentProviderEffort,
     cursorModel,
-    opencodeModel,
+    piModel,
     permissionMode,
     provider,
     resolvePermissionModeForProvider,

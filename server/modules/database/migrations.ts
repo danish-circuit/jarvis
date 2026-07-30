@@ -402,6 +402,30 @@ const addProviderSessionIdMapping = (db: Database): void => {
   `);
 };
 
+/**
+ * Drops session rows left behind by the retired OpenCode provider.
+ *
+ * `sessions.provider` is free-text with no CHECK constraint, so removing a
+ * provider does not invalidate the schema — but it does strand the rows:
+ * `providerRegistry.resolveProvider('opencode')` now throws
+ * `UNSUPPORTED_PROVIDER` (400) the moment the sidebar or any history fetch
+ * touches one.
+ *
+ * These rows are only an index. The conversations themselves live in OpenCode's
+ * own `~/.local/share/opencode/opencode.db`, which this does not touch, so a
+ * user who reinstalls the OpenCode CLI still has their history there.
+ */
+const removeRetiredOpenCodeSessions = (db: Database): void => {
+  if (!tableExists(db, 'sessions')) {
+    return;
+  }
+
+  const result = db.prepare(`DELETE FROM sessions WHERE provider = 'opencode'`).run();
+  if (result.changes > 0) {
+    console.log(`Running migration: Removed ${result.changes} retired OpenCode session row(s)`);
+  }
+};
+
 const ensureProjectsForSessionPaths = (db: Database): void => {
   if (!tableExists(db, 'sessions')) {
     return;
@@ -452,6 +476,7 @@ export const runMigrations = (db: Database) => {
     rebuildSessionsTableWithProjectSchema(db);
     migrateLegacySessionNames(db);
     addProviderSessionIdMapping(db);
+    removeRetiredOpenCodeSessions(db);
     ensureProjectsForSessionPaths(db);
 
     db.exec('CREATE INDEX IF NOT EXISTS idx_session_ids_lookup ON sessions(session_id)');

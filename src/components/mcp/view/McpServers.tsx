@@ -127,9 +127,9 @@ export default function McpServers({ selectedProvider, currentProjects }: McpSer
   });
   const globalButtonLabel = 'Add Global MCP Server';
   const providerButtonLabel = `Add ${providerName} MCP Server`;
-  const globalAddDescription = 'Add Global MCP Server writes one common stdio or HTTP server to Claude, Cursor, Codex, and OpenCode.';
+  const globalAddDescription = 'Add Global MCP Server writes one common stdio or HTTP server to Claude, Cursor, and Codex.';
   const providerAddDescription = `${providerButtonLabel} only changes ${providerName}.`;
-  const globalModalDescription = 'Adds this MCP server to every provider: Claude, Cursor, Codex, and OpenCode. '
+  const globalModalDescription = 'Adds this MCP server to every provider that supports MCP: Claude, Cursor, and Codex. '
     + 'Only stdio and HTTP transports are supported because the same config must work across all providers.';
 
   return (

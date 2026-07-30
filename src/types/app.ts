@@ -1,4 +1,21 @@
-export type LLMProvider = 'claude' | 'cursor' | 'codex' | 'opencode';
+export type LLMProvider = 'claude' | 'cursor' | 'codex' | 'pi';
+
+/** Runtime mirror of {@link LLMProvider}, for validating untrusted values. */
+export const LLM_PROVIDERS: LLMProvider[] = ['claude', 'cursor', 'codex', 'pi'];
+
+/**
+ * Narrows an untrusted provider value, falling back to `claude`.
+ *
+ * `localStorage` outlives any given build, so it can still hold the id of a
+ * provider that has since been removed (`opencode`, for example). Feeding that
+ * to the backend produces an `UNSUPPORTED_PROVIDER` 400, so every read of a
+ * persisted provider id goes through here.
+ */
+export function sanitizeProvider(value: unknown): LLMProvider {
+  return typeof value === 'string' && LLM_PROVIDERS.includes(value as LLMProvider)
+    ? value as LLMProvider
+    : 'claude';
+}
 
 export type ProviderModelOption = {
   value: string;

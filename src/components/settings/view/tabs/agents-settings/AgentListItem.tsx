@@ -28,8 +28,8 @@ const agentConfig: Record<AgentProvider, AgentConfig> = {
     name: 'Codex',
     color: 'gray',
   },
-  opencode: {
-    name: 'OpenCode',
+  pi: {
+    name: 'Pi',
     color: 'zinc',
   },
 };

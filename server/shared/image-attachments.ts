@@ -9,7 +9,7 @@ import path from 'node:path';
  * folder and referenced by absolute path everywhere else:
  * - Claude: paths are read back into base64 `image` content blocks.
  * - Codex: paths become `local_image` input items.
- * - Cursor/OpenCode: paths are appended to the prompt inside an
+ * - Cursor: paths are appended to the prompt inside an
  *   `<images_input>` tag, which is stripped again when history is read.
  *
  * The chat UI loads them through the dedicated `/api/assets/images/:filename`
@@ -156,8 +156,8 @@ export type ParsedImagesInput = {
 };
 
 /**
- * Appends the `<images_input>` reference block used by the Cursor and
- * OpenCode CLIs. The block carries one numbered line per attachment with
+ * Appends the `<images_input>` reference block used by the Cursor CLI.
+ * The block carries one numbered line per attachment with
  * the stored file path (quote-free on purpose — Windows .cmd shims mangle
  * quoted text) and the user's original filename, plus an explicit instruction
  * to read the files and keep the block out of the reply. The same block is
@@ -304,6 +304,52 @@ export async function buildClaudeUserContent(
           data: bytes.toString('base64'),
         },
       });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[Images] Failed to read image ${descriptor.path}: ${message}`);
+    }
+  }
+
+  return blocks;
+}
+
+type PiImageContent = { type: 'image'; data: string; mimeType: string };
+
+/**
+ * Builds Pi's RPC `images` array: one base64 `ImageContent` block per attachment.
+ *
+ * Pi's `prompt` command carries images as structured content alongside the
+ * message text, so unlike the Cursor runtime there is no `<images_input>`
+ * path tag to append to the prompt and strip back out when reading history.
+ *
+ * Shares the trust boundary used by `buildClaudeUserContent`: paths are resolved
+ * and re-checked after `realpath` so a symlink cannot escape the allowed roots.
+ */
+export async function buildPiImageContents(images: unknown, cwd?: string): Promise<PiImageContent[]> {
+  const blocks: PiImageContent[] = [];
+
+  for (const descriptor of normalizeImageDescriptors(images)) {
+    const mediaType = resolveImageMediaType(descriptor);
+    if (!mediaType || !CLAUDE_IMAGE_MEDIA_TYPES.has(mediaType)) {
+      console.warn(`[Images] Skipping unsupported Pi image type for ${descriptor.path}`);
+      continue;
+    }
+
+    const resolvedPath = resolveImageAbsolutePath(cwd, descriptor.path);
+    if (!isAllowedImageSourcePath(resolvedPath, cwd)) {
+      console.warn(`[Images] Refusing to read image outside allowed roots: ${descriptor.path}`);
+      continue;
+    }
+
+    try {
+      const canonicalPath = await fs.realpath(resolvedPath);
+      if (!isAllowedImageSourcePath(canonicalPath, cwd)) {
+        console.warn(`[Images] Refusing to read symlinked image outside allowed roots: ${descriptor.path}`);
+        continue;
+      }
+
+      const bytes = await fs.readFile(canonicalPath);
+      blocks.push({ type: 'image', data: bytes.toString('base64'), mimeType: mediaType });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[Images] Failed to read image ${descriptor.path}: ${message}`);

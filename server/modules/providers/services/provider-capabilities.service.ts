@@ -62,16 +62,19 @@ const PROVIDER_CAPABILITIES: Record<LLMProvider, ProviderCapabilities> = {
     supportsTokenUsage: true,
     supportsEffort: true,
   },
-  opencode: {
-    provider: 'opencode',
-    // Mapped by the runtime onto OpenCode's controls: `--agent plan` (plan),
-    // `--auto` (bypassPermissions) and the OPENCODE_PERMISSION env var
-    // (acceptEdits). See resolveOpenCodePermissionOptions in opencode-cli.js.
-    permissionModes: ['default', 'acceptEdits', 'bypassPermissions', 'plan'],
+  pi: {
+    provider: 'pi',
+    // Pi ships no permission system at all — its docs say so outright and the
+    // RPC protocol has no approval message. `plan` is honored by handing the
+    // model a read-only `--tools` allowlist (see resolvePiPermissionOptions in
+    // pi-cli.js); `acceptEdits` and `bypassPermissions` are intentionally
+    // absent because they would be indistinguishable from `default`.
+    permissionModes: ['default', 'plan'],
     defaultPermissionMode: 'default',
     supportsImages: true,
     supportsAbort: true,
     supportsPermissionRequests: false,
+    // Usage is stamped on each assistant message and summed by the runtime.
     supportsTokenUsage: true,
     supportsEffort: true,
   },

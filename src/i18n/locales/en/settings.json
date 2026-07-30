@@ -349,8 +349,8 @@
       "codex": {
         "description": "OpenAI Codex AI assistant"
       },
-      "opencode": {
-        "description": "OpenCode CLI assistant"
+      "pi": {
+        "description": "Pi coding agent CLI"
       }
     },
     "connectionStatus": "Connection Status",
@@ -462,7 +462,7 @@
       "claude": "Model Context Protocol servers provide additional tools and data sources to Claude",
       "cursor": "Model Context Protocol servers provide additional tools and data sources to Cursor",
       "codex": "Model Context Protocol servers provide additional tools and data sources to Codex",
-      "opencode": "Model Context Protocol servers provide additional tools and data sources to OpenCode"
+      "pi": "Pi does not support Model Context Protocol servers"
     },
     "addButton": "Add MCP Server",
     "empty": "No MCP servers configured",

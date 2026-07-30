@@ -8,6 +8,7 @@ import { projectsDb, sessionsDb } from '@/modules/database/index.js';
 import { sessionSynchronizerService } from '@/modules/providers/services/session-synchronizer.service.js';
 import { WS_OPEN_STATE, connectedClients } from '@/modules/websocket/index.js';
 import type { LLMProvider } from '@/shared/types.js';
+import { getPiSessionsDir } from '@/shared/utils.js';
 import { generateDisplayName } from '@/modules/projects/index.js';
 
 type WatcherEventType = 'add' | 'change';
@@ -26,8 +27,8 @@ const PROVIDER_WATCH_PATHS: Array<{ provider: LLMProvider; rootPath: string }> =
     rootPath: path.join(os.homedir(), '.codex', 'sessions'),
   },
   {
-    provider: 'opencode',
-    rootPath: path.join(os.homedir(), '.local', 'share', 'opencode'),
+    provider: 'pi',
+    rootPath: getPiSessionsDir(),
   },
 ];
 
@@ -66,11 +67,8 @@ let watcherRescheduleAfterRefresh = false;
 /**
  * Filters watcher events to provider-specific session artifact file types.
  */
-function isWatcherTargetFile(provider: LLMProvider, filePath: string): boolean {
-  if (provider === 'opencode') {
-    return path.basename(filePath) === 'opencode.db';
-  }
-
+function isWatcherTargetFile(_provider: LLMProvider, filePath: string): boolean {
+  // Every provider stores transcripts as per-session JSONL files.
   return filePath.endsWith('.jsonl');
 }
 

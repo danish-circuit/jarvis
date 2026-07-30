@@ -12,10 +12,10 @@ import spawn from 'cross-spawn';
 import express from 'express';
 import cors from 'cors';
 import mime from 'mime-types';
-import Database from 'better-sqlite3';
 
-import { AppError, WORKSPACES_ROOT, getOpenCodeDatabasePath, validateWorkspacePath } from '@/shared/utils.js';
+import { AppError, WORKSPACES_ROOT, validateWorkspacePath } from '@/shared/utils.js';
 import { closeSessionsWatcher, initializeSessionsWatcher } from '@/modules/providers/index.js';
+import { sessionsService } from '@/modules/providers/services/sessions.service.js';
 import { createWebSocketServer } from '@/modules/websocket/index.js';
 
 import { getConnectableHost } from '../shared/networkHosts.js';
@@ -36,9 +36,9 @@ import {
     abortCodexSession,
 } from './openai-codex.js';
 import {
-    spawnOpenCode,
-    abortOpenCodeSession,
-} from './opencode-cli.js';
+    spawnPi,
+    abortPiSession,
+} from './pi-cli.js';
 import {
     stripAnsiSequences,
     normalizeDetectedUrl,
@@ -113,13 +113,13 @@ const wss = createWebSocketServer(server, {
             claude: queryClaudeSDK,
             cursor: spawnCursor,
             codex: queryCodex,
-            opencode: spawnOpenCode,
+            pi: spawnPi,
         },
         abortFns: {
             claude: abortClaudeSDKSession,
             cursor: abortCursorSession,
             codex: abortCodexSession,
-            opencode: abortOpenCodeSession,
+            pi: abortPiSession,
         },
         resolveToolApproval,
         getPendingApprovalsForSession,
@@ -1080,8 +1080,8 @@ app.get('/api/projects/:projectId/sessions/:sessionId/token-usage', authenticate
             return res.status(400).json({ error: 'Invalid sessionId' });
         }
 
-        // Provider artifacts on disk (JSONL file names, OpenCode sqlite rows)
-        // are keyed by the provider-native session id, while the caller sends
+        // Provider artifacts on disk (JSONL file names) are keyed by the
+        // provider-native session id, while the caller sends
         // the app-facing id. Resolve provider and id mapping from the indexed
         // session row so the frontend does not choose provider-specific paths.
         const sessionRow = sessionsDb.getSessionById(safeSessionId);
@@ -1105,63 +1105,22 @@ app.get('/api/projects/:projectId/sessions/:sessionId/token-usage', authenticate
             });
         }
 
-        if (provider === 'opencode') {
-            const dbPath = getOpenCodeDatabasePath();
-            if (!fs.existsSync(dbPath)) {
-                return res.status(404).json({ error: 'OpenCode database not found' });
-            }
-
-            const db = new Database(dbPath, { readonly: true, fileMustExist: true });
-            try {
-                const columns = db.prepare('PRAGMA table_info(session)').all();
-                const columnNames = new Set(columns.map((column) => column.name));
-                const requiredColumns = ['tokens_input', 'tokens_output', 'tokens_reasoning', 'tokens_cache_read', 'tokens_cache_write'];
-                if (!requiredColumns.every((column) => columnNames.has(column))) {
-                    return res.json({
-                        used: 0,
-                        inputTokens: 0,
-                        outputTokens: 0,
-                        breakdown: { input: 0, output: 0 },
-                        unsupported: true,
-                        message: 'Token usage tracking is not available in this OpenCode database schema'
-                    });
-                }
-
-                const row = db.prepare(`
-                    SELECT
-                        tokens_input AS inputTokens,
-                        tokens_output AS outputTokens,
-                        tokens_reasoning AS reasoningTokens,
-                        tokens_cache_read AS cacheReadTokens,
-                        tokens_cache_write AS cacheWriteTokens
-                    FROM session
-                    WHERE id = ?
-                `).get(providerNativeSessionId);
-
-                if (!row) {
-                    return res.status(404).json({ error: 'OpenCode session not found', sessionId: safeSessionId });
-                }
-
-                const inputTokens = Number(row.inputTokens || 0) + Number(row.cacheReadTokens || 0);
-                const outputTokens = Number(row.outputTokens || 0);
-                const totalUsed = Number(row.inputTokens || 0)
-                    + outputTokens
-                    + Number(row.reasoningTokens || 0)
-                    + Number(row.cacheReadTokens || 0)
-                    + Number(row.cacheWriteTokens || 0);
-
+        // Pi stamps usage onto each assistant message rather than keeping a
+        // session total, so the sessions provider is the one place that knows
+        // how to add it up. Delegate instead of duplicating that logic here.
+        if (provider === 'pi') {
+            const history = await sessionsService.fetchHistory(safeSessionId, { limit: 0 });
+            const tokenUsage = history.tokenUsage;
+            if (!tokenUsage) {
                 return res.json({
-                    used: totalUsed,
-                    inputTokens,
-                    outputTokens,
-                    breakdown: {
-                        input: inputTokens,
-                        output: outputTokens
-                    }
+                    used: 0,
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    breakdown: { input: 0, output: 0 },
                 });
-            } finally {
-                db.close();
             }
+
+            return res.json(tokenUsage);
         }
 
         // Handle Codex sessions

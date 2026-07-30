@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { AgentCategory, AgentProvider } from '../../../types/types';
 
+import { getVisibleAgentCategories } from './agentCategories';
 import type { AgentContext, AgentsSettingsTabProps } from './types';
 import AgentCategoryContentSection from './sections/AgentCategoryContentSection';
 import AgentCategoryTabsSection from './sections/AgentCategoryTabsSection';
@@ -20,14 +21,13 @@ export default function AgentsSettingsTab({
 }: AgentsSettingsTabProps) {
   const [selectedAgent, setSelectedAgent] = useState<AgentProvider>('claude');
   const [selectedCategory, setSelectedCategory] = useState<AgentCategory>('account');
-  const visibleCategories = useMemo<AgentCategory[]>(() => (
-    selectedAgent === 'opencode'
-      ? ['account', 'permissions', 'mcp']
-      : ['account', 'permissions', 'mcp', 'skills']
-  ), [selectedAgent]);
+  const visibleCategories = useMemo<AgentCategory[]>(
+    () => getVisibleAgentCategories(selectedAgent),
+    [selectedAgent],
+  );
 
   const visibleAgents = useMemo<AgentProvider[]>(() => {
-    return ['claude', 'cursor', 'codex', 'opencode'];
+    return ['claude', 'cursor', 'codex', 'pi'];
   }, []);
 
   const agentContextById = useMemo<Record<AgentProvider, AgentContext>>(() => ({
@@ -43,16 +43,16 @@ export default function AgentsSettingsTab({
       authStatus: providerAuthStatus.codex,
       onLogin: () => onProviderLogin('codex'),
     },
-    opencode: {
-      authStatus: providerAuthStatus.opencode,
-      onLogin: () => onProviderLogin('opencode'),
+    pi: {
+      authStatus: providerAuthStatus.pi,
+      onLogin: () => onProviderLogin('pi'),
     },
   }), [
     onProviderLogin,
     providerAuthStatus.claude,
     providerAuthStatus.codex,
     providerAuthStatus.cursor,
-    providerAuthStatus.opencode,
+    providerAuthStatus.pi,
   ]);
 
   useEffect(() => {

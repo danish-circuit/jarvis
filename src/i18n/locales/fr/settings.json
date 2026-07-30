@@ -323,8 +323,8 @@
       "codex": {
         "description": "Assistant IA Codex d'OpenAI"
       },
-      "opencode": {
-        "description": "Assistant CLI OpenCode"
+      "pi": {
+        "description": "Agent de codage CLI Pi"
       }
     },
     "connectionStatus": "Statut de la connexion",
@@ -420,7 +420,7 @@
       "claude": "Les serveurs Model Context Protocol fournissent des outils et sources de données supplémentaires à Claude",
       "cursor": "Les serveurs Model Context Protocol fournissent des outils et sources de données supplémentaires à Cursor",
       "codex": "Les serveurs Model Context Protocol fournissent des outils et sources de données supplémentaires à Codex",
-      "opencode": "Les serveurs Model Context Protocol fournissent des outils et sources de données supplémentaires à OpenCode"
+      "pi": "Pi ne prend pas en charge les serveurs Model Context Protocol"
     },
     "addButton": "Ajouter un serveur MCP",
     "empty": "Aucun serveur MCP configuré",
