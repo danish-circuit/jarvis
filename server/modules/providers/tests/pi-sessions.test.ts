@@ -408,6 +408,57 @@ test('normalizeMessage surfaces a failed turn as an error', () => {
 });
 
 /**
+ * Regression guard for a crash that took down the entire chat interface.
+ *
+ * The chat converter reads a tool result's **top-level** `content`; the message
+ * components read the nested `toolResult.content`. Pi originally set only the
+ * nested one, so `formatToolResultContent` received `undefined`, and because
+ * `JSON.stringify(undefined)` is `undefined` rather than a string, the
+ * subsequent `.trim()` threw and the error boundary replaced the whole pane
+ * with "Something went wrong". Both fields are part of the contract.
+ */
+test('tool_result carries top-level content as well as toolResult.content', async () => {
+  const live = provider.normalizeMessage(
+    { type: 'tool_execution_end', toolCallId: 'call_1', toolName: 'bash', result: 'hello', isError: false },
+    'sess-1',
+  );
+  assert.equal(live[0].kind, 'tool_result');
+  assert.equal(live[0].content, 'hello');
+  assert.equal(live[0].toolResult?.content, 'hello');
+
+  // A result with no payload must still be a string, never undefined.
+  const empty = provider.normalizeMessage(
+    { type: 'tool_execution_end', toolCallId: 'call_2', toolName: 'bash', isError: false },
+    'sess-1',
+  );
+  assert.equal(typeof empty[0].content, 'string');
+
+  const lines = [
+    header('/workspace'),
+    userEntry('aaaa1111', null, 'run it'),
+    JSON.stringify({
+      type: 'message',
+      id: 'bbbb2222',
+      parentId: 'aaaa1111',
+      message: {
+        role: 'toolResult',
+        toolCallId: 'call_1',
+        toolName: 'bash',
+        content: [{ type: 'text', text: 'file.txt' }],
+        isError: false,
+      },
+    }),
+  ];
+
+  await withPiSession(lines, 'sess-1', async () => {
+    const result = await provider.fetchHistory('sess-1');
+    const toolResult = result.messages.find((message) => message.kind === 'tool_result');
+    assert.equal(toolResult?.content, 'file.txt');
+    assert.equal(toolResult?.toolResult?.content, 'file.txt');
+  });
+});
+
+/**
  * Pins the two filename/path conventions ported from Pi's session-manager, so a
  * change upstream shows up here rather than as an empty sidebar.
  */

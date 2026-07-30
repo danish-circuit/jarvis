@@ -196,6 +196,10 @@ export class PiSessionsProvider implements IProviderSessions {
         toolName: readOptionalString(raw.toolName) ?? 'Tool',
         toolId: toolCallId ?? undefined,
         isError: raw.isError === true,
+        // Top-level `content` is the field the chat converter reads; the nested
+        // `toolResult` is what the message components render. Both are required
+        // — omitting `content` is what made the whole pane throw once.
+        content: formatToolContent(raw.result),
         toolResult: {
           content: formatToolContent(raw.result),
           isError: raw.isError === true,
@@ -370,6 +374,7 @@ export class PiSessionsProvider implements IProviderSessions {
         toolName: readOptionalString(message.toolName) ?? 'Tool',
         toolId: readOptionalString(message.toolCallId) ?? undefined,
         isError,
+        content: extractTextContent(message.content),
         toolResult: { content: extractTextContent(message.content), isError },
       })];
     }

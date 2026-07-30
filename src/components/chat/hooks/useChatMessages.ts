@@ -8,7 +8,10 @@ import type { ChatMessage, SubagentChildTool } from '../types/types';
 import { decodeHtmlEntities, unescapeWithMathProtection, formatUsageLimitText } from '../utils/chatFormatting';
 
 function formatToolResultContent(content: unknown): string {
-  const text = typeof content === 'string' ? content : JSON.stringify(content);
+  // `JSON.stringify(undefined)` is `undefined`, not a string — so a provider
+  // that omits tool-result content used to throw here and take the whole chat
+  // interface down with it. Degrade to empty instead.
+  const text = typeof content === 'string' ? content : JSON.stringify(content) ?? '';
   const toolUseErrorMatch = /^<tool_use_error>([\s\S]*)<\/tool_use_error>$/.exec(text.trim());
   return toolUseErrorMatch ? toolUseErrorMatch[1] : text;
 }
