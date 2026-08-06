@@ -83,6 +83,130 @@ function findServerEchoForLocalUser(
   return closestMatch;
 }
 
+// Consumed by useSessionStore to keep merged views in chronological order.
+export function compareMessagesChronologically(a: NormalizedMessage, b: NormalizedMessage): number {
+  const timeA = readMessageTime(a) ?? 0;
+  const timeB = readMessageTime(b) ?? 0;
+  if (timeA !== timeB) {
+    return timeA - timeB;
+  }
+  return 0;
+}
+
+/**
+ * Count how many user turns precede `message` in a chronologically merged view
+ * of server + realtime rows. Used to match a realtime row to the correct turn
+ * on disk when several turns share identical assistant text.
+ */
+function getUserTurnOrdinalBefore(
+  message: NormalizedMessage,
+  serverMessages: NormalizedMessage[],
+  realtimeMessages: NormalizedMessage[],
+): number {
+  const messageTime = readMessageTime(message);
+  let userCount = 0;
+
+  for (const candidate of [...serverMessages, ...realtimeMessages].sort(compareMessagesChronologically)) {
+    if (candidate.id === message.id) {
+      break;
+    }
+
+    const candidateTime = readMessageTime(candidate);
+    if (
+      messageTime !== null
+      && candidateTime !== null
+      && candidateTime > messageTime
+    ) {
+      break;
+    }
+
+    if (candidate.kind === 'text' && candidate.role === 'user') {
+      userCount++;
+    }
+  }
+
+  return Math.max(0, userCount - 1);
+}
+
+function findServerTurnRangeByOrdinal(
+  serverMessages: NormalizedMessage[],
+  turnOrdinal: number,
+): { start: number; end: number } | null {
+  let userCount = -1;
+  let start = -1;
+
+  for (let index = 0; index < serverMessages.length; index++) {
+    const message = serverMessages[index];
+    if (message.kind === 'text' && message.role === 'user') {
+      userCount++;
+      if (userCount === turnOrdinal) {
+        start = index;
+        break;
+      }
+    }
+  }
+
+  if (start < 0) {
+    return null;
+  }
+
+  let end = serverMessages.length;
+  for (let index = start + 1; index < serverMessages.length; index++) {
+    if (serverMessages[index].kind === 'text' && serverMessages[index].role === 'user') {
+      end = index;
+      break;
+    }
+  }
+
+  return { start, end };
+}
+
+export type AssistantEchoMatchMode = 'exact' | 'fragment';
+
+/**
+ * Whether a realtime assistant row is already represented by a persisted
+ * server row in the same user turn.
+ *
+ * - `exact` (default): the server row's trimmed text must equal the realtime
+ *   row's. Used for rows that claim to be a complete message.
+ * - `fragment`: the server row only has to *contain* the realtime row's
+ *   trimmed text. Used for streamed rows: a shattered stream (a provider that
+ *   closed a text block per chunk) leaves per-word fragments behind that
+ *   never equal any server row, and exact matching let them zombie-render
+ *   above the persisted turn forever.
+ *
+ * Consumed by useSessionStore's prune on server refresh.
+ */
+export function isAssistantTextEchoedInSameTurnOnServer(
+  message: NormalizedMessage,
+  serverMessages: NormalizedMessage[],
+  realtimeMessages: NormalizedMessage[],
+  matchMode: AssistantEchoMatchMode = 'exact',
+): boolean {
+  const assistantText = (message.content || '').trim();
+  if (!assistantText) {
+    return false;
+  }
+
+  const turnOrdinal = getUserTurnOrdinalBefore(message, serverMessages, realtimeMessages);
+  const turnRange = findServerTurnRangeByOrdinal(serverMessages, turnOrdinal);
+  if (!turnRange) {
+    return false;
+  }
+
+  return serverMessages
+    .slice(turnRange.start + 1, turnRange.end)
+    .some((serverMessage) => {
+      if (serverMessage.kind !== 'text' || serverMessage.role !== 'assistant') {
+        return false;
+      }
+      const serverText = (serverMessage.content || '').trim();
+      return matchMode === 'fragment'
+        ? serverText.includes(assistantText)
+        : serverText === assistantText;
+    });
+}
+
 /**
  * Removes local optimistic user rows once a corresponding persisted turn is
  * available. Matches are one-to-one so repeated sends cannot claim one row.
