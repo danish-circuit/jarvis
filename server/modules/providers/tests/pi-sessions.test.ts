@@ -367,20 +367,26 @@ test('normalizeMessage maps live RPC events', () => {
 
   assert.equal(provider.normalizeMessage({ type: 'agent_end' }, 'sess-1')[0].kind, 'stream_end');
 
-  // Each text block must close its own streaming bubble. The client accumulates
-  // deltas into ONE bubble per session and only flushes on `stream_end`, so
-  // without this a multi-block turn became a single run-together bubble whose
-  // text matched no persisted block — and the store's text-equality dedupe then
-  // rendered the whole turn twice.
-  assert.equal(
+  // A text block's end only arms the bubble close; it fires on the next
+  // non-text event. Firing it immediately breaks down when a provider closes
+  // a block per streamed chunk (see the shattered-blocks test below).
+  assert.deepEqual(
     provider.normalizeMessage(
       { type: 'message_update', assistantMessageEvent: { type: 'text_end', content: 'done' } },
       'sess-1',
-    )[0].kind,
-    'stream_end',
+    ),
+    [],
   );
 
-  // A successful turn's message_end must not produce a bubble of its own.
+  // A successful turn's message_end produces no bubble of its own, but it does
+  // flush an armed close — one bubble per assistant step.
+  const flushedAtStepEnd = provider.normalizeMessage(
+    { type: 'message_end', message: { role: 'assistant', stopReason: 'stop', content: [] } },
+    'sess-1',
+  );
+  assert.deepEqual(flushedAtStepEnd.map((message) => message.kind), ['stream_end']);
+
+  // With nothing armed, message_end stays silent.
   assert.deepEqual(
     provider.normalizeMessage(
       { type: 'message_end', message: { role: 'assistant', stopReason: 'stop', content: [] } },
@@ -441,6 +447,119 @@ test('normalizeMessage surfaces a failed turn as an error', () => {
   );
   assert.equal(streamingError[0].kind, 'error');
   assert.equal(streamingError[0].content, 'rate limited');
+});
+
+/**
+ * Regression guard for gateways that wrap every streamed chunk in its own
+ * content block (observed with proxied model endpoints): pi then fires
+ * `text_end` per word, and flushing the bubble on each one rendered every
+ * word as its own chat message. Adjacent blocks must merge into one bubble;
+ * the close fires only once, at the end of the turn.
+ */
+test('normalizeMessage merges text blocks shattered per chunk into one bubble', () => {
+  const session = 'sess-shattered';
+  const words = ['recreate', ' the', ' stack', ',', ' wait'];
+  const emitted: string[] = [];
+
+  for (const word of words) {
+    emitted.push(
+      ...provider
+        .normalizeMessage(
+          { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: word } },
+          session,
+        )
+        .map((message) => message.kind),
+    );
+    emitted.push(
+      ...provider
+        .normalizeMessage(
+          { type: 'message_update', assistantMessageEvent: { type: 'text_end', content: word } },
+          session,
+        )
+        .map((message) => message.kind),
+    );
+  }
+
+  emitted.push(
+    ...provider.normalizeMessage({ type: 'agent_end' }, session).map((message) => message.kind),
+  );
+
+  assert.deepEqual(emitted, [...words.map(() => 'stream_delta'), 'stream_end']);
+});
+
+/**
+ * The other half of the boundary contract: a genuine interruption (tool call,
+ * end of step) between blocks still closes the bubble per block, so each live
+ * row keeps matching exactly one persisted history row.
+ */
+test('normalizeMessage closes the bubble when a tool call separates text blocks', () => {
+  const session = 'sess-blocks';
+
+  provider.normalizeMessage(
+    { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'first' } },
+    session,
+  );
+  provider.normalizeMessage(
+    { type: 'message_update', assistantMessageEvent: { type: 'text_end', content: 'first' } },
+    session,
+  );
+
+  const atToolStart = provider.normalizeMessage(
+    { type: 'tool_execution_start', toolCallId: 'call_1', toolName: 'bash', args: { command: 'ls' } },
+    session,
+  );
+  assert.deepEqual(atToolStart.map((message) => message.kind), ['stream_end', 'tool_use']);
+
+  // The armed close is spent: the tool result must not re-fire it.
+  const atToolEnd = provider.normalizeMessage(
+    { type: 'tool_execution_end', toolCallId: 'call_1', toolName: 'bash', result: 'out', isError: false },
+    session,
+  );
+  assert.deepEqual(atToolEnd.map((message) => message.kind), ['tool_result']);
+});
+
+/**
+ * History counterpart of the shattered-blocks fix: a provider that closes a
+ * block per chunk persists one assistant message with many adjacent text
+ * blocks. Rendering them verbatim would put every word in its own bubble on
+ * reload, so adjacent text blocks join back into one row — matching the
+ * single bubble the live stream produced.
+ */
+test('fetchHistory joins adjacent text blocks shattered by the provider', async () => {
+  const lines = [
+    header('/workspace'),
+    userEntry('aaaa1111', null, 'question'),
+    JSON.stringify({
+      type: 'message',
+      id: 'bbbb2222',
+      parentId: 'aaaa1111',
+      timestamp: '2026-01-01T00:00:02.000Z',
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'recreate' },
+          { type: 'text', text: ' the' },
+          { type: 'text', text: ' stack' },
+          { type: 'thinking', thinking: 'pause' },
+          { type: 'text', text: 'then wait' },
+        ],
+      },
+    }),
+  ];
+
+  await withPiSession(lines, 'sess-1', async () => {
+    const result = await provider.fetchHistory('sess-1');
+    assert.deepEqual(
+      result.messages.map((message) => [message.kind, message.content]),
+      [
+        ['text', 'question'],
+        ['text', 'recreate the stack'],
+        ['thinking', 'pause'],
+        // A thinking block between text blocks keeps them apart.
+        ['text', 'then wait'],
+      ],
+    );
+  });
 });
 
 /**

@@ -1,10 +1,52 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import crossSpawn from 'cross-spawn';
 
 import { resolveClaudeCodeExecutablePath } from '@/shared/claude-cli-path.js';
 import type { LLMProvider, ProviderCliUpdateResult, ProviderCliVersion } from '@/shared/types.js';
 
-const execFileAsync = promisify(execFile);
+type CliRunResult = { stdout: string; stderr: string };
+
+/**
+ * Promisified cross-spawn with the stdout/stderr shape callers got from
+ * execFile. cross-spawn (not execFile) is what resolves `.cmd` shims on
+ * Windows, and it is what the pi runtime spawns with — reading a version
+ * through execFile would report the bare `pi` command as missing there while
+ * sessions run it fine.
+ */
+function runCli(file: string, args: string[], timeout: number): Promise<CliRunResult> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = crossSpawn(file, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+
+    const timer = setTimeout(() => {
+      child.kill();
+      rejectPromise(new Error(`Command timed out after ${timeout}ms`));
+    }, timeout);
+
+    child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+    child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      rejectPromise(error);
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        resolvePromise({ stdout, stderr });
+        return;
+      }
+      const error = new Error(`Command failed with exit code ${code}`) as Error & {
+        stdout?: string;
+        stderr?: string;
+      };
+      error.stdout = stdout;
+      error.stderr = stderr;
+      rejectPromise(error);
+    });
+  });
+}
 
 const VERSION_TIMEOUT_MS = 15_000;
 const REGISTRY_TIMEOUT_MS = 20_000;
@@ -12,9 +54,8 @@ const UPDATE_TIMEOUT_MS = 300_000;
 const REGISTRY_CACHE_MS = 30 * 60 * 1000;
 
 /**
- * Per-provider knowledge of how to read and upgrade its CLI. Only Claude is
- * wired up today; the shape is here so another provider is a table entry
- * rather than a new endpoint.
+ * Per-provider knowledge of how to read and upgrade its CLI, so adding a
+ * provider is a table entry rather than a new endpoint.
  */
 type CliDescriptor = {
   /** Resolves the executable the server actually spawns for this provider. */
@@ -33,6 +74,15 @@ const CLI_DESCRIPTORS: Partial<Record<LLMProvider, CliDescriptor>> = {
     resolveExecutable: () => resolveClaudeCodeExecutablePath(process.env.CLAUDE_CLI_PATH),
     npmPackage: '@anthropic-ai/claude-code',
     updateArgs: ['update'],
+  },
+  pi: {
+    // The runtime spawns the bare `pi` command (pi-runtime.provider.js), so
+    // the version reported must be whatever PATH resolves for that same name.
+    resolveExecutable: () => 'pi',
+    npmPackage: '@earendil-works/pi-coding-agent',
+    // Bare `update` updates pi itself; --no-approve keeps the updater from
+    // trusting project-local files in whatever directory the server runs from.
+    updateArgs: ['update', '--no-approve'],
   },
 };
 
@@ -64,9 +114,7 @@ let registryCache: { package: string; version: string; fetchedAt: number } | nul
 
 async function readInstalledVersion(descriptor: CliDescriptor): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync(descriptor.resolveExecutable(), ['--version'], {
-      timeout: VERSION_TIMEOUT_MS,
-    });
+    const { stdout } = await runCli(descriptor.resolveExecutable(), ['--version'], VERSION_TIMEOUT_MS);
     return parseVersion(stdout);
   } catch {
     return null;
@@ -80,9 +128,9 @@ async function readLatestVersion(descriptor: CliDescriptor): Promise<string | nu
   }
 
   try {
-    const { stdout } = await execFileAsync('npm', ['view', descriptor.npmPackage, 'version'], {
-      timeout: REGISTRY_TIMEOUT_MS,
-    });
+    // `npm` is itself a .cmd shim on Windows, so this goes through the same
+    // cross-spawn runner as the CLI binaries.
+    const { stdout } = await runCli('npm', ['view', descriptor.npmPackage, 'version'], REGISTRY_TIMEOUT_MS);
     const version = parseVersion(stdout);
     if (version) {
       registryCache = { package: descriptor.npmPackage, version, fetchedAt: Date.now() };
@@ -156,10 +204,10 @@ export class ProviderCliVersionService {
     let output = '';
     let failure: string | undefined;
     try {
-      const { stdout, stderr } = await execFileAsync(
+      const { stdout, stderr } = await runCli(
         descriptor.resolveExecutable(),
         descriptor.updateArgs,
-        { timeout: UPDATE_TIMEOUT_MS },
+        UPDATE_TIMEOUT_MS,
       );
       output = `${stdout}${stderr}`.trim();
     } catch (error) {

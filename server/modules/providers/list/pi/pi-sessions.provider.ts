@@ -85,6 +85,19 @@ const extractImageContent = (content: unknown): unknown[] | undefined => {
 
 export class PiSessionsProvider implements IProviderSessions {
   /**
+   * Deferred stream boundaries, one per session.
+   *
+   * A well-behaved provider closes a text block only when the prose is truly
+   * interrupted (tool call, thinking block, end of the step). A gateway that
+   * wraps every streamed chunk in its own content block — observed with
+   * proxied model endpoints — fires `text_end` per word, and flushing the
+   * bubble there renders one bubble per word. So `text_end` only *arms* the
+   * close and the next event decides: another text delta cancels it (adjacent
+   * blocks merge into one bubble), anything else flushes it ahead of itself.
+   */
+  private readonly pendingStreamEndBySession = new Map<string, NormalizedMessage>();
+
+  /**
    * Normalizes live `pi --mode rpc` events into frontend messages.
    *
    * Pi streams the agent loop as discrete lifecycle events rather than one
@@ -104,6 +117,13 @@ export class PiSessionsProvider implements IProviderSessions {
 
     const timestamp = normalizeProviderTimestamp(raw.timestamp);
     const base = { sessionId: sessionId ?? '', timestamp, provider: PROVIDER } as const;
+    const streamKey = sessionId ?? '';
+
+    const takePendingStreamEnd = (): NormalizedMessage[] => {
+      const pending = this.pendingStreamEndBySession.get(streamKey);
+      this.pendingStreamEndBySession.delete(streamKey);
+      return pending ? [pending] : [];
+    };
 
     /**
      * Surfaces a failed assistant turn.
@@ -130,7 +150,7 @@ export class PiSessionsProvider implements IProviderSessions {
 
     if (type === 'message_end') {
       const errorMessage = readMessageError(raw.message);
-      return errorMessage
+      const errorMessages = errorMessage
         ? [createNormalizedMessage({
           ...base,
           id: generateMessageId('pi_error'),
@@ -138,6 +158,9 @@ export class PiSessionsProvider implements IProviderSessions {
           content: errorMessage,
         })]
         : [];
+      // The step is over, so an armed block close always lands here — this is
+      // what keeps one bubble per assistant step in a multi-step turn.
+      return [...takePendingStreamEnd(), ...errorMessages];
     }
 
     if (type === 'message_update') {
@@ -150,7 +173,7 @@ export class PiSessionsProvider implements IProviderSessions {
         const errorMessage = readMessageError(event?.error)
           ?? readOptionalString(readObjectRecord(event?.error)?.errorMessage)
           ?? 'Pi request failed';
-        return [createNormalizedMessage({
+        return [...takePendingStreamEnd(), createNormalizedMessage({
           ...base,
           id: generateMessageId('pi_error'),
           kind: 'error',
@@ -163,13 +186,13 @@ export class PiSessionsProvider implements IProviderSessions {
       // collapsible "Thought for…" row and the store never merges consecutive
       // ones, so streaming deltas here produced one row per token. Pi's
       // `thinking_end` carries the whole block, which matches how the Claude
-      // adapter emits complete blocks and keeps this function stateless.
+      // adapter emits complete blocks.
       //
       // A turn that dies mid-block therefore shows no thinking live; it still
       // appears on reload, because the history path reads the persisted blocks.
       if (eventType === 'thinking_end') {
         const thinking = readTextValue(event?.content);
-        return thinking.trim()
+        const thinkingMessages = thinking.trim()
           ? [createNormalizedMessage({
             ...base,
             id: generateMessageId('pi_thinking'),
@@ -177,9 +200,11 @@ export class PiSessionsProvider implements IProviderSessions {
             content: thinking,
           })]
           : [];
+        return [...takePendingStreamEnd(), ...thinkingMessages];
       }
 
-      // Close the streaming bubble at the end of each text block.
+      // Arm (but do not fire) the streaming bubble's close at a text block
+      // boundary.
       //
       // The client keeps ONE streaming bubble per session and accumulates every
       // `stream_delta` into it; `stream_end` flushes it into a finished text
@@ -189,30 +214,34 @@ export class PiSessionsProvider implements IProviderSessions {
       // store dedupes live against server rows by exact text equality
       // (dedupeAdjacentAssistantEchoes), nothing collapsed and the whole turn
       // rendered twice — once run-together from the stream, once correctly from
-      // history. Per-block boundaries make each live row equal exactly one
-      // server row, which both fixes the duplication and preserves streaming.
+      // history. Block boundaries must therefore close the bubble — but only
+      // when they are real, which is why the close is deferred to the next
+      // event (see pendingStreamEndBySession).
       if (eventType === 'text_end') {
-        return [createNormalizedMessage({
+        this.pendingStreamEndBySession.set(streamKey, createNormalizedMessage({
           ...base,
           id: generateMessageId('pi_text_end'),
           kind: 'stream_end',
-        })];
-      }
-
-      // Text stays delta-based: `stream_delta` is concatenated into the live
-      // assistant bubble, so the user sees the reply as it is produced.
-      const delta = readTextValue(event?.delta);
-      if (!delta) {
+        }));
         return [];
       }
 
       if (eventType === 'text_delta') {
-        return [createNormalizedMessage({
-          ...base,
-          id: generateMessageId('pi_text'),
-          kind: 'stream_delta',
-          content: delta,
-        })];
+        // More text after an armed close means the "boundary" was mid-prose:
+        // cancel it so the bubble absorbs the next block seamlessly.
+        this.pendingStreamEndBySession.delete(streamKey);
+
+        // Text stays delta-based: `stream_delta` is concatenated into the live
+        // assistant bubble, so the user sees the reply as it is produced.
+        const delta = readTextValue(event?.delta);
+        return delta
+          ? [createNormalizedMessage({
+            ...base,
+            id: generateMessageId('pi_text'),
+            kind: 'stream_delta',
+            content: delta,
+          })]
+          : [];
       }
 
       return [];
@@ -220,7 +249,7 @@ export class PiSessionsProvider implements IProviderSessions {
 
     if (type === 'tool_execution_start') {
       const toolCallId = readOptionalString(raw.toolCallId);
-      return [createNormalizedMessage({
+      return [...takePendingStreamEnd(), createNormalizedMessage({
         ...base,
         // Suffix the id so the start and end of one call cannot collide.
         id: toolCallId ? `${toolCallId}-start` : generateMessageId('pi_tool'),
@@ -233,7 +262,7 @@ export class PiSessionsProvider implements IProviderSessions {
 
     if (type === 'tool_execution_end') {
       const toolCallId = readOptionalString(raw.toolCallId);
-      return [createNormalizedMessage({
+      return [...takePendingStreamEnd(), createNormalizedMessage({
         ...base,
         id: toolCallId ? `${toolCallId}-end` : generateMessageId('pi_tool_result'),
         kind: 'tool_result',
@@ -252,6 +281,9 @@ export class PiSessionsProvider implements IProviderSessions {
     }
 
     if (type === 'agent_end') {
+      // This close supersedes an armed one — finalizing twice would be a no-op
+      // anyway, so the pending entry is simply dropped.
+      this.pendingStreamEndBySession.delete(streamKey);
       return [createNormalizedMessage({
         ...base,
         id: generateMessageId('pi_end'),
@@ -263,7 +295,7 @@ export class PiSessionsProvider implements IProviderSessions {
     // stalled-looking turn is explainable rather than silent.
     if (type === 'auto_retry_start') {
       const errorMessage = readOptionalString(raw.errorMessage) ?? 'Pi is retrying the request';
-      return [createNormalizedMessage({
+      return [...takePendingStreamEnd(), createNormalizedMessage({
         ...base,
         id: generateMessageId('pi_retry'),
         kind: 'error',
@@ -461,6 +493,12 @@ export class PiSessionsProvider implements IProviderSessions {
 
   /**
    * Splits an assistant message's content blocks into separate messages.
+   *
+   * Adjacent text blocks are joined back into one row: providers that close a
+   * content block per streamed chunk persist one assistant message whose prose
+   * is shattered across many blocks, and rendering them as-is puts every word
+   * in its own bubble. Joining is the faithful render and keeps the row
+   * identical to the single bubble the live stream merged those blocks into.
    */
   private normalizeAssistantContent(
     content: unknown,
@@ -493,15 +531,26 @@ export class PiSessionsProvider implements IProviderSessions {
 
       if (blockType === 'text') {
         const text = readTextValue(record.text);
-        if (text.trim()) {
-          messages.push(createNormalizedMessage({
-            ...base,
-            id: `${entryId}-text-${index}`,
-            kind: 'text',
-            role: 'assistant',
-            content: text,
-          }));
+        if (!text.trim()) {
+          return;
         }
+
+        const previous = messages[messages.length - 1];
+        if (previous?.kind === 'text' && previous.role === 'assistant') {
+          messages[messages.length - 1] = {
+            ...previous,
+            content: `${previous.content ?? ''}${text}`,
+          };
+          return;
+        }
+
+        messages.push(createNormalizedMessage({
+          ...base,
+          id: `${entryId}-text-${index}`,
+          kind: 'text',
+          role: 'assistant',
+          content: text,
+        }));
         return;
       }
 
