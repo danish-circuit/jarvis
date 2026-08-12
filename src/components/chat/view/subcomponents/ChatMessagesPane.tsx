@@ -7,6 +7,7 @@ import type {
   Project,
   ProjectSession,
   LLMProvider,
+  ProviderModelActions,
   ProviderModelsDefinition,
 } from '../../../../types/app';
 import { getIntrinsicMessageKey } from '../../utils/messageKeys';
@@ -42,6 +43,7 @@ interface ChatMessagesPaneProps {
   piModel: string;
   setPiModel: (model: string) => void;
   providerModelCatalog: Partial<Record<LLMProvider, ProviderModelsDefinition>>;
+  providerModelActions: ProviderModelActions;
   providerModelsLoading: boolean;
   tasksEnabled: boolean;
   isTaskMasterInstalled: boolean | null;
@@ -90,6 +92,7 @@ function ChatMessagesPane({
   piModel,
   setPiModel,
   providerModelCatalog,
+  providerModelActions,
   providerModelsLoading,
   tasksEnabled,
   isTaskMasterInstalled,
@@ -196,6 +199,7 @@ function ChatMessagesPane({
           piModel={piModel}
           setPiModel={setPiModel}
           providerModelCatalog={providerModelCatalog}
+          providerModelActions={providerModelActions}
           providerModelsLoading={providerModelsLoading}
           tasksEnabled={tasksEnabled}
           isTaskMasterInstalled={isTaskMasterInstalled}
