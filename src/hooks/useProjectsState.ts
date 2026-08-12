@@ -982,7 +982,7 @@ export function useProjectsState({
       clearSessionAttention(session.id);
       setSelectedSession(session);
 
-      if (activeTab === 'tasks' || activeTab === 'browser') {
+      if (activeTab === 'tasks' || activeTab === 'browser' || activeTab === 'plugin:scheduled-tasks') {
         setActiveTab('chat');
       }
 
