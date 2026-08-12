@@ -8,11 +8,12 @@ import type { AgentCategory, AgentProvider } from '../../../types/types';
  * versa). Previously each site carried its own `selectedAgent !== '...'` check
  * and they had to be kept in sync by hand.
  *
- * Pi is the one provider with no MCP tab: it has no MCP support at all, so its
- * MCP facet declares zero scopes and every write would 400.
+ * Pi has no built-in MCP support; its MCP tab manages the config files the
+ * `pi-mcp-adapter` extension reads, so the category only does something when
+ * that extension is installed.
  */
 const AGENT_CATEGORY_OVERRIDES: Partial<Record<AgentProvider, AgentCategory[]>> = {
-  pi: ['account', 'permissions', 'skills'],
+  pi: ['account', 'permissions', 'mcp', 'skills'],
 };
 
 const DEFAULT_AGENT_CATEGORIES: AgentCategory[] = ['account', 'permissions', 'mcp', 'skills'];

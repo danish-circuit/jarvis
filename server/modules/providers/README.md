@@ -142,14 +142,18 @@ Current MCP formats in this repo are:
 | Claude | `.mcp.json` in user / local / project locations | `user`, `local`, `project` | `stdio`, `http`, `sse` |
 | Codex | `.codex/config.toml` | `user`, `project` | `stdio`, `http` |
 | Cursor | `.cursor/mcp.json` | `user`, `project` | `stdio`, `http` |
-| Pi | none | none | none |
+| Pi | `<Pi agent dir>/mcp.json` (user), `.pi/mcp.json` (project) | `user`, `project` | `stdio`, `http` |
 
-Pi has no MCP support at all, so `PiMcpProvider` passes empty scope/transport
-lists to `super(...)`. The shared base then degrades correctly on its own:
-`listServers` returns an all-empty record and writes reject with
-`MCP_SCOPE_NOT_SUPPORTED`. Use `mcp.getSupportedScopes()` to detect this — the
-global add/remove fan-out in `mcp.service.ts` skips such providers rather than
-collecting a guaranteed failure.
+Pi has no built-in MCP support, so `PiMcpProvider` reads and writes the config
+files the `pi-mcp-adapter` extension consumes. Only Pi-owned files are touched;
+servers from shared configs the adapter also reads (`.mcp.json`,
+`~/.config/mcp/mcp.json`) are not listed under Pi. A provider that cannot store
+MCP servers at all should pass empty scope/transport lists to `super(...)` —
+the shared base then degrades correctly on its own: `listServers` returns an
+all-empty record and writes reject with `MCP_SCOPE_NOT_SUPPORTED`. Use
+`mcp.getSupportedScopes()` to detect this — the global add/remove fan-out in
+`mcp.service.ts` skips such providers rather than collecting a guaranteed
+failure.
 
 5. Implement skills.
 

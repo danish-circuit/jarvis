@@ -170,36 +170,82 @@ test('providerMcpService handles codex MCP TOML config and capability validation
 });
 
 /**
- * Pi has no MCP support, so its facet declares zero scopes and transports. This
- * pins that contract: listing yields nothing rather than throwing, and every
- * write is rejected with a 400 instead of silently writing a config file Pi
- * would never read.
+ * Pi's MCP facet writes the pi-mcp-adapter config files: the user scope lands in
+ * `<Pi agent dir>/mcp.json` and the project scope in `.pi/mcp.json`, both using
+ * the standard `mcpServers` shape. The local scope and sse transport remain
+ * unsupported and must keep rejecting with a 400.
  */
-test('providerMcpService reports pi as having no MCP support', { concurrency: false }, async () => {
+test('providerMcpService handles pi MCP scopes with file-backed persistence', { concurrency: false }, async () => {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'llm-mcp-pi-'));
   const workspacePath = path.join(tempRoot, 'workspace');
   await fs.mkdir(workspacePath, { recursive: true });
 
   const restoreHomeDir = patchHomeDir(tempRoot);
   try {
-    const grouped = await providerMcpService.listProviderMcpServers('pi', { workspacePath });
-    assert.deepEqual(grouped, { user: [], local: [], project: [] });
+    await providerMcpService.upsertProviderMcpServer('pi', {
+      name: 'pi-user-stdio',
+      scope: 'user',
+      transport: 'stdio',
+      command: 'npx',
+      args: ['-y', 'my-server'],
+      env: { API_KEY: 'secret' },
+    });
 
-    for (const scope of ['user', 'project', 'local'] as const) {
-      await assert.rejects(
-        providerMcpService.upsertProviderMcpServer('pi', {
-          name: 'pi-stdio',
-          scope,
-          transport: 'stdio',
-          command: 'node',
-          workspacePath,
-        }),
-        (error: unknown) =>
-          error instanceof AppError &&
-          error.code === 'MCP_SCOPE_NOT_SUPPORTED' &&
-          error.statusCode === 400,
-      );
-    }
+    await providerMcpService.upsertProviderMcpServer('pi', {
+      name: 'pi-project-http',
+      scope: 'project',
+      transport: 'http',
+      url: 'https://example.com/mcp',
+      headers: { Authorization: 'Bearer token' },
+      workspacePath,
+    });
+
+    const grouped = await providerMcpService.listProviderMcpServers('pi', { workspacePath });
+    assert.deepEqual(grouped.local, []);
+    assert.ok(grouped.user.some((server) => server.name === 'pi-user-stdio' && server.transport === 'stdio'));
+    assert.ok(grouped.project.some((server) => server.name === 'pi-project-http' && server.transport === 'http'));
+
+    const userConfig = await readJson(path.join(tempRoot, '.pi', 'agent', 'mcp.json'));
+    const userServer = (userConfig.mcpServers as Record<string, unknown>)['pi-user-stdio'] as Record<string, unknown>;
+    assert.equal(userServer.command, 'npx');
+
+    const projectConfig = await readJson(path.join(workspacePath, '.pi', 'mcp.json'));
+    const projectServer = (projectConfig.mcpServers as Record<string, unknown>)['pi-project-http'] as Record<string, unknown>;
+    assert.equal(projectServer.url, 'https://example.com/mcp');
+
+    const removeResult = await providerMcpService.removeProviderMcpServer('pi', {
+      name: 'pi-user-stdio',
+      scope: 'user',
+    });
+    assert.equal(removeResult.removed, true);
+
+    await assert.rejects(
+      providerMcpService.upsertProviderMcpServer('pi', {
+        name: 'pi-local-stdio',
+        scope: 'local',
+        transport: 'stdio',
+        command: 'node',
+        workspacePath,
+      }),
+      (error: unknown) =>
+        error instanceof AppError &&
+        error.code === 'MCP_SCOPE_NOT_SUPPORTED' &&
+        error.statusCode === 400,
+    );
+
+    await assert.rejects(
+      providerMcpService.upsertProviderMcpServer('pi', {
+        name: 'pi-sse',
+        scope: 'project',
+        transport: 'sse',
+        url: 'https://example.com/sse',
+        workspacePath,
+      }),
+      (error: unknown) =>
+        error instanceof AppError &&
+        error.code === 'MCP_TRANSPORT_NOT_SUPPORTED' &&
+        error.statusCode === 400,
+    );
   } finally {
     restoreHomeDir();
     await fs.rm(tempRoot, { recursive: true, force: true });
@@ -263,14 +309,14 @@ test('providerMcpService global adder writes to all providers and rejects unsupp
       workspacePath,
     });
 
-    // Pi is skipped entirely: it supports no MCP scopes, so a global add
-    // touches only the three providers that can actually store the server.
-    assert.equal(globalResult.length, 3);
+    assert.equal(globalResult.length, 4);
     assert.ok(globalResult.every((entry) => entry.created === true));
-    assert.ok(!globalResult.some((entry) => entry.provider === 'pi'));
 
     const claudeProject = await readJson(path.join(workspacePath, '.mcp.json'));
     assert.ok((claudeProject.mcpServers as Record<string, unknown>)['global-http']);
+
+    const piProject = await readJson(path.join(workspacePath, '.pi', 'mcp.json'));
+    assert.ok((piProject.mcpServers as Record<string, unknown>)['global-http']);
 
     const codexProject = TOML.parse(await fs.readFile(path.join(workspacePath, '.codex', 'config.toml'), 'utf8')) as Record<string, unknown>;
     assert.ok((codexProject.mcp_servers as Record<string, unknown>)['global-http']);

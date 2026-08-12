@@ -11,15 +11,15 @@ export const MCP_SUPPORTED_SCOPES: Record<McpProvider, McpScope[]> = {
   claude: ['user', 'project', 'local'],
   cursor: ['user', 'project'],
   codex: ['user', 'project'],
-  // Pi has no MCP support at all, so it advertises no scopes or transports.
-  pi: [],
+  // Pi's scopes/transports are the ones its pi-mcp-adapter config files support.
+  pi: ['user', 'project'],
 };
 
 export const MCP_SUPPORTED_TRANSPORTS: Record<McpProvider, McpTransport[]> = {
   claude: ['stdio', 'http', 'sse'],
   cursor: ['stdio', 'http'],
   codex: ['stdio', 'http'],
-  pi: [],
+  pi: ['stdio', 'http'],
 };
 
 export const MCP_GLOBAL_SUPPORTED_SCOPES: McpScope[] = ['user', 'project'];

@@ -138,7 +138,7 @@ export interface IProviderMcp {
   /**
    * Scopes this provider can persist MCP servers to.
    *
-   * An empty list means the provider has no MCP support at all (Pi), which lets
+   * An empty list means the provider has no MCP support at all, which lets
    * callers that fan out across every provider skip it instead of collecting a
    * guaranteed `MCP_SCOPE_NOT_SUPPORTED` failure.
    */

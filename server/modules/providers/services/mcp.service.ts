@@ -66,7 +66,7 @@ export const providerMcpService = {
     const results: Array<{ provider: LLMProvider; created: boolean; error?: string }> = [];
     const providers = providerRegistry.listProviders();
     for (const provider of providers) {
-      // Providers with no MCP support (Pi) would fail every time; skipping them
+      // Providers with no MCP support would fail every time; skipping them
       // keeps a global add from always reporting a phantom failure.
       if (provider.mcp.getSupportedScopes().length === 0) {
         continue;
