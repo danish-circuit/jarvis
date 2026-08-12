@@ -62,6 +62,7 @@
   "actions": {
     "refresh": "Actualizar",
     "settings": "Ajustes",
+    "scheduledTasks": "Tareas programadas",
     "collapseAll": "Contraer todo",
     "expandAll": "Expandir todo",
     "cancel": "Cancelar",

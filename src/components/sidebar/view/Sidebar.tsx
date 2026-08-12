@@ -37,6 +37,7 @@ function Sidebar({
   loadingProgress,
   onRefresh,
   onShowSettings,
+  onShowScheduledTasks,
   showSettings,
   settingsInitialTab,
   onCloseSettings,
@@ -321,6 +322,7 @@ function Sidebar({
             currentVersion={currentVersion}
             onShowVersionModal={() => setShowVersionModal(true)}
             onShowSettings={onShowSettings}
+            onShowScheduledTasks={onShowScheduledTasks}
             projectListProps={projectListProps}
             t={t}
           />

@@ -159,7 +159,8 @@ export function scanPlugins() {
   const seenNames = new Set();
 
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    // Symlinks are accepted so a plugin checkout can be linked in for development
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
     // Skip transient temp directories from in-progress installs
     if (entry.name.startsWith('.tmp-')) continue;
 

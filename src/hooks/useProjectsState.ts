@@ -1164,6 +1164,7 @@ export function useProjectsState({
       loadingProgress,
       onRefresh: handleSidebarRefresh,
       onShowSettings: () => setShowSettings(true),
+      onShowScheduledTasks: () => setActiveTab('plugin:scheduled-tasks'),
       showSettings,
       settingsInitialTab,
       onCloseSettings: () => setShowSettings(false),
@@ -1186,6 +1187,7 @@ export function useProjectsState({
       settingsInitialTab,
       selectedProject,
       selectedSession,
+      setActiveTab,
       showSettings,
     ],
   );

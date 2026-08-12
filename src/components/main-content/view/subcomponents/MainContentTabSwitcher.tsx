@@ -67,8 +67,9 @@ export default function MainContentTabSwitcher({
     ...(shouldShowTasksTab ? [TASKS_TAB] : []),
   ];
 
+  // Scheduled Tasks is launched from the sidebar footer instead of the pill bar.
   const pluginTabs: PluginTab[] = plugins
-    .filter((p) => p.enabled)
+    .filter((p) => p.enabled && p.name !== 'scheduled-tasks')
     .map((p) => ({
       kind: 'plugin',
       id: `plugin:${p.name}` as AppTab,
