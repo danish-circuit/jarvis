@@ -1,4 +1,5 @@
 // @ts-nocheck -- subprocess records are narrowed at the Plugins composition boundary.
+import fs from 'fs';
 import path from 'path';
 
 // cross-spawn: drop-in spawn with Windows .cmd/PATHEXT resolution.
@@ -22,13 +23,28 @@ const startingPlugins = new Map();
  * resolve system DLLs, executable extensions and a temp directory. None of
  * these carry secrets, so the ones that are set get passed straight through.
  */
-function buildPluginEnv(name) {
+function buildPluginEnv(name, pluginDir) {
   const env = {
     PATH: process.env.PATH,
     HOME: process.env.HOME,
     NODE_ENV: process.env.NODE_ENV || 'production',
     PLUGIN_NAME: name,
   };
+
+  // Plugins can declare an env allowlist in their manifest ("env": ["KEY"])
+  // to receive specific host variables, e.g. provider API keys.
+  let declaredEnv = [];
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(pluginDir, 'manifest.json'), 'utf-8'));
+    if (Array.isArray(manifest.env)) {
+      declaredEnv = manifest.env.filter((key) => typeof key === 'string');
+    }
+  } catch { /* no readable manifest — nothing extra to pass */ }
+  for (const key of declaredEnv) {
+    if (process.env[key] !== undefined) {
+      env[key] = process.env[key];
+    }
+  }
 
   if (process.platform === 'win32') {
     const WINDOWS_ESSENTIALS = [
@@ -67,7 +83,7 @@ export function startPluginServer(name, pluginDir, serverEntry) {
 
     const pluginProcess = spawn('node', [serverPath], {
       cwd: pluginDir,
-      env: buildPluginEnv(name),
+      env: buildPluginEnv(name, pluginDir),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
